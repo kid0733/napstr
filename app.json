@@ -22,7 +22,8 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#000000"
-      }
+      },
+      "package": "com.karki0733.napstr"
     },
     "web": {
       "favicon": "./assets/icon.png"
