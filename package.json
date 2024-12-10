@@ -11,6 +11,8 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@expo/vector-icons": "^14.0.4",
+    "@react-native-community/blur": "^4.4.1",
     "expo": "~52.0.17",
     "expo-constants": "~17.0.3",
     "expo-dev-client": "~5.0.5",

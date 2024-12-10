@@ -6,6 +6,7 @@ export const colors = {
 	greenPrimary: '#90a955',
 	greenSecondary: '#7da647',
 	greenTertiary: '#dde5b6',
+	greenQuaternary: '#2C3423',
 	// Red theme
 	redPrimary: '#e63946',
 	redSecondary: '#ff6b6b',
@@ -30,7 +31,7 @@ export const fontSize = {
 	display2: 40,
 	display3: 32,
 	// Heading sizes
-	h1: 28,
+	h1: 24,
 	h2: 24,
 	h3: 20,
 	h4: 18,
