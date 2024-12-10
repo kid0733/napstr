@@ -16,20 +16,30 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.karki0733.napstr",
-      "appleTeamId": "U63RPYT5TG"
+      "appleTeamId": "U63RPYT5TG",
+      "infoPlist": {
+        "NSMotionUsageDescription": "Allow Napstr to access your device motion for interactive UI effects"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.karki0733.napstr"
+      "package": "com.karki0733.napstr",
+      "permissions": ["android.permission.HIGH_SAMPLING_RATE_SENSORS"]
     },
     "web": {
       "favicon": "./assets/icon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "Allow Napstr to access your device motion for interactive UI effects"
+        }
+      ]
     ],
     "experiments": {
       "tsconfigPaths": true,

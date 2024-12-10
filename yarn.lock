@@ -3740,6 +3740,13 @@ expo-router@~4.0.11:
     semver "~7.6.3"
     server-only "^0.0.1"
 
+expo-sensors@~14.0.1:
+  version "14.0.1"
+  resolved "https://registry.yarnpkg.com/expo-sensors/-/expo-sensors-14.0.1.tgz#445099f2a5e5631b0088b9d09697d927e8176ae1"
+  integrity sha512-dgSUCrNEvOpqI9hj2QI1r0hZJux1b7W4Jz+f2Ahg8UvyMn4UpOU39YbHDDJ6dvvXEdeeYYFknM0XJYAyhzkPAw==
+  dependencies:
+    invariant "^2.2.4"
+
 expo-splash-screen@^0.29.16:
   version "0.29.16"
   resolved "https://registry.npmjs.org/expo-splash-screen/-/expo-splash-screen-0.29.16.tgz"

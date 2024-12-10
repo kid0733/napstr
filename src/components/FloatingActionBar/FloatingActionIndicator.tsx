@@ -1,12 +1,11 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { StyleSheet, ViewStyle, ImageBackground, View } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   withTiming, 
   useAnimatedReaction,
-  runOnJS 
+  interpolate
 } from 'react-native-reanimated';
-import { colors } from '@/constants/tokens';
 
 export interface FloatingActionIndicatorProps {
   activeBackgroundColor?: string;
@@ -15,6 +14,7 @@ export interface FloatingActionIndicatorProps {
   selectedIndex?: number;
   width?: number;
   animatedIndex: Animated.SharedValue<number>;
+  isActive?: boolean;
 }
 
 export const FloatingActionIndicator: React.FC<FloatingActionIndicatorProps> = ({
@@ -22,8 +22,8 @@ export const FloatingActionIndicator: React.FC<FloatingActionIndicatorProps> = (
   position = 'bottom',
   width = 70,
   animatedIndex,
+  isActive = true,
 }) => {
-  // Use useAnimatedReaction to properly track changes to animatedIndex
   useAnimatedReaction(
     () => animatedIndex.value,
     (currentValue, previousValue) => {
@@ -50,22 +50,28 @@ export const FloatingActionIndicator: React.FC<FloatingActionIndicatorProps> = (
         break;
     }
 
+    const borderRadius = withTiming(isActive ? 22 : height / 2, { duration: 300 });
+    const indicatorWidth = withTiming(isActive ? width : height, { duration: 300 });
+
     return {
+      width: indicatorWidth,
+      borderRadius,
       transform: [
-        { translateX: withTiming(translateX, { duration: 200 }) },
+        { translateX: withTiming(translateX + (isActive ? 0 : (width - height) / 2), { duration: 200 }) },
         { translateY: withTiming(translateY, { duration: 200 }) },
       ],
     };
   });
 
   return (
-    <Animated.View style={[styles.container, { width, height }, animatedStyle]}>
+    <Animated.View style={[styles.container, { height }, animatedStyle]}>
       <ImageBackground
-        source={require('../../../assets/sparkly-background_3.jpg')}
+        source={require('../../../assets/sparkly-background.jpg')}
         style={styles.background}
-        imageStyle={styles.backgroundImage}
+        imageStyle={[styles.backgroundImage, { borderRadius: height / 2 }]}
         blurRadius={1.25}
       >
+        <View style={styles.blueOverlay} />
         <View style={styles.frost} />
       </ImageBackground>
     </Animated.View>
@@ -75,7 +81,6 @@ export const FloatingActionIndicator: React.FC<FloatingActionIndicatorProps> = (
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    borderRadius: 22,
     overflow: 'hidden',
   },
   background: {
@@ -85,9 +90,13 @@ const styles = StyleSheet.create({
   backgroundImage: {
     resizeMode: 'cover',
   },
+  blueOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 80, 255, 0.1)',
+  },
   frost: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.65)',
+    backgroundColor: 'rgba(255, 255, 255, 0.55)',
     backdropFilter: 'blur(8px)',
   },
 }); 

@@ -25,7 +25,7 @@ export default function TabLayout() {
                 <View style={[styles.centerContent, { flex: 0 }]}>
                     <AnimatedTitle title={currentTitle} />
                 </View>
-                <View style={{ marginTop: screenHeight * 0.02 }}>
+                <View style={{ marginTop: screenHeight * 0.002 }}>
                     <NavigationBar currentRoute={pathname} />
                 </View>
             </View>

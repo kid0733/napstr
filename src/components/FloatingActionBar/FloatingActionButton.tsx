@@ -1,10 +1,11 @@
 import React from 'react';
 import { StyleSheet, TouchableOpacity, ViewStyle, StyleProp } from 'react-native';
-import Animated from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
 
 const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+const AnimatedIonicons = Animated.createAnimatedComponent(Ionicons);
 
 export interface FloatingActionButtonProps {
   active?: boolean;
@@ -16,6 +17,7 @@ export interface FloatingActionButtonProps {
   size?: number;
   onPress?: () => void;
   style?: StyleProp<ViewStyle>;
+  isBarActive?: boolean;
 }
 
 export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
@@ -28,10 +30,26 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   size = 24,
   onPress = () => null,
   style,
+  isBarActive = true,
 }) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { scale: withTiming(isBarActive ? 1 : 0.7, { duration: 300 }) }
+      ]
+    };
+  });
+
   const renderIcon = () => {
     if (typeof icon === 'string') {
-      return <Ionicons name={icon as any} size={size} color={active ? activeColor : color} />;
+      return (
+        <AnimatedIonicons 
+          name={icon as any} 
+          size={size} 
+          color={active ? activeColor : color}
+          style={animatedStyle}
+        />
+      );
     } else if (typeof icon === 'function') {
       return icon({ active, activeColor, color, height, width, size });
     }

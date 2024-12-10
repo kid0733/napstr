@@ -1,6 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, View, ViewStyle, StyleProp, ImageBackground } from 'react-native';
-import Animated, { useSharedValue } from 'react-native-reanimated';
+import React, { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, View, ViewStyle, StyleProp, ImageBackground, Pressable } from 'react-native';
+import Animated, { 
+  useSharedValue, 
+  withTiming, 
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  cancelAnimation
+} from 'react-native-reanimated';
 
 import { FloatingActionButton, FloatingActionButtonProps } from './FloatingActionButton';
 import { FloatingActionIndicator } from './FloatingActionIndicator';
@@ -20,16 +27,79 @@ export interface FloatingActionBarProps {
 
 export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
   items = [],
-  offset = 50,
+  offset = 5,
   onPress = () => null,
   position = 'bottom',
   selectedIndex = 0,
   style,
 }) => {
   const [currentIndex, setCurrentIndex] = useState(selectedIndex);
+  const [isActive, setIsActive] = useState(true);
   
-  // Shared value for animation
+  // Shared values for animation
   const animatedIndex = useSharedValue(currentIndex);
+  const scaleY = useSharedValue(1);
+  const opacity = useSharedValue(1);
+  const bgOffsetX = useSharedValue(0);
+  const bgOffsetY = useSharedValue(0);
+  
+  // Timer ref to prevent memory leaks
+  const timeoutRef = React.useRef<NodeJS.Timeout>();
+
+  const startInactiveTimer = useCallback(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    timeoutRef.current = setTimeout(() => {
+      setIsActive(false);
+      scaleY.value = withTiming(0.6, { duration: 300 });
+      opacity.value = withTiming(0, { duration: 300 });
+      
+      // Start continuous background movement with much slower timing
+      bgOffsetX.value = withRepeat(
+        withSequence(
+          withTiming(-10, { duration: 8000 }),
+          withTiming(10, { duration: 8000 })
+        ),
+        -1,
+        true
+      );
+      
+      bgOffsetY.value = withRepeat(
+        withSequence(
+          withTiming(-5, { duration: 6000 }),
+          withTiming(5, { duration: 6000 })
+        ),
+        -1,
+        true
+      );
+    }, 5000);
+  }, []);
+
+  const handleActivation = useCallback(() => {
+    setIsActive(true);
+    scaleY.value = withTiming(1, { duration: 300 });
+    opacity.value = withTiming(1, { duration: 300 });
+    
+    // Stop background movement
+    cancelAnimation(bgOffsetX);
+    cancelAnimation(bgOffsetY);
+    bgOffsetX.value = withTiming(0, { duration: 300 });
+    bgOffsetY.value = withTiming(0, { duration: 300 });
+    
+    startInactiveTimer();
+  }, []);
+
+  useEffect(() => {
+    startInactiveTimer();
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+      cancelAnimation(bgOffsetX);
+      cancelAnimation(bgOffsetY);
+    };
+  }, []);
 
   useEffect(() => {
     animatedIndex.value = currentIndex;
@@ -37,15 +107,58 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
 
   const size = getSize(position);
 
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scaleY: scaleY.value }],
+      alignItems: 'center',
+      justifyContent: 'center'
+    };
+  });
+
+  const backgroundStyle = useAnimatedStyle(() => {
+    return {
+      opacity: opacity.value,
+      backgroundColor: 'rgba(45,52,35,0.0)',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+      elevation: 5,
+    };
+  });
+
+  const backgroundImageStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { translateX: bgOffsetX.value },
+        { translateY: bgOffsetY.value },
+        { scale: 1.2 }
+      ],
+      width: '120%',
+      height: '120%',
+      borderWidth: 0.5,
+      borderColor: 'rgba(255,255,255,0.5)',
+      borderRadius: 35,
+    };
+  });
+
   return (
-    <View style={[styles.container, getPositions(position, offset)]}>
-      <ImageBackground
-        source={require('../../../assets/sparkly-background_3.jpg')}
-        style={styles.background}
-        imageStyle={styles.backgroundImage}
-        blurRadius={1.25}
-      >
-        <View style={[styles.content, style]}>
+    <Pressable 
+      style={[styles.container, getPositions(position, offset)]}
+      onPress={handleActivation}
+    >
+      <Animated.View style={[animatedStyle]}>
+        <View style={styles.backgroundContainer}>
+          <Animated.View style={backgroundImageStyle}>
+            <ImageBackground
+              source={require('../../../assets/sparkly-background.png')}
+              style={styles.background}
+              imageStyle={styles.backgroundImage}
+              blurRadius={1.25}
+            />
+          </Animated.View>
+        </View>
+        <Animated.View style={[styles.content, backgroundStyle]}>
           <View style={[getDirection(position)]}>
             <FloatingActionIndicator
               {...items[currentIndex]}
@@ -53,6 +166,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
               position={position}
               selectedIndex={currentIndex}
               animatedIndex={animatedIndex}
+              isActive={isActive}
             />
             {items.map((item, index) => (
               <FloatingActionButton
@@ -64,14 +178,16 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
                     setCurrentIndex(index);
                     onPress(index);
                   }
+                  handleActivation();
                 }}
                 active={index === currentIndex}
+                isBarActive={isActive}
               />
             ))}
           </View>
-        </View>
-      </ImageBackground>
-    </View>
+        </Animated.View>
+      </Animated.View>
+    </Pressable>
   );
 };
 
@@ -137,25 +253,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: 'auto',
   },
+  backgroundContainer: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    overflow: 'hidden',
+    borderRadius: 35,
+  },
   background: {
-    width: 'auto',
+    width: '100%',
     height: '100%',
   },
   backgroundImage: {
     resizeMode: 'cover',
-    borderRadius: 30,
+    borderRadius: 35,
   },
   content: {
     padding: 8,
     paddingHorizontal: 12,
-    borderRadius: 30,
-    backgroundColor: 'rgba(45,52,35,0.0)',
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.5)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 5,
   },
 }); 
