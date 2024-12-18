@@ -66,7 +66,7 @@ export const FloatingActionIndicator: React.FC<FloatingActionIndicatorProps> = (
   return (
     <Animated.View style={[styles.container, { height }, animatedStyle]}>
       <ImageBackground
-        source={require('../../../assets/sparkly-background.jpg')}
+        source={require('../../../assets/grain_menu.png')}
         style={styles.background}
         imageStyle={[styles.backgroundImage, { borderRadius: height / 2 }]}
         blurRadius={1.25}

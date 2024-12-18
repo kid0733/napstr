@@ -38,8 +38,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
   
   // Shared values for animation
   const animatedIndex = useSharedValue(currentIndex);
-  const scaleY = useSharedValue(1);
-  const opacity = useSharedValue(1);
+  const backgroundOpacity = useSharedValue(1);
   const bgOffsetX = useSharedValue(0);
   const bgOffsetY = useSharedValue(0);
   
@@ -52,8 +51,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
     }
     timeoutRef.current = setTimeout(() => {
       setIsActive(false);
-      scaleY.value = withTiming(0.6, { duration: 300 });
-      opacity.value = withTiming(0, { duration: 300 });
+      backgroundOpacity.value = withTiming(0, { duration: 300 });
       
       // Start continuous background movement with much slower timing
       bgOffsetX.value = withRepeat(
@@ -78,8 +76,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
 
   const handleActivation = useCallback(() => {
     setIsActive(true);
-    scaleY.value = withTiming(1, { duration: 300 });
-    opacity.value = withTiming(1, { duration: 300 });
+    backgroundOpacity.value = withTiming(1, { duration: 300 });
     
     // Stop background movement
     cancelAnimation(bgOffsetX);
@@ -109,7 +106,6 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
 
   const animatedStyle = useAnimatedStyle(() => {
     return {
-      transform: [{ scaleY: scaleY.value }],
       alignItems: 'center',
       justifyContent: 'center'
     };
@@ -117,7 +113,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
 
   const backgroundStyle = useAnimatedStyle(() => {
     return {
-      opacity: opacity.value,
+      opacity: backgroundOpacity.value,
       backgroundColor: 'rgba(45,52,35,0.0)',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
@@ -129,6 +125,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
 
   const backgroundImageStyle = useAnimatedStyle(() => {
     return {
+      opacity: backgroundOpacity.value,
       transform: [
         { translateX: bgOffsetX.value },
         { translateY: bgOffsetY.value },
@@ -148,17 +145,20 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
       onPress={handleActivation}
     >
       <Animated.View style={[animatedStyle]}>
-        <View style={styles.backgroundContainer}>
+        {/* Background Layer */}
+        <View style={[styles.backgroundContainer, { position: 'absolute', width: '100%', height: '100%' }]}>
           <Animated.View style={backgroundImageStyle}>
             <ImageBackground
-              source={require('../../../assets/sparkly-background.png')}
+              source={require('../../../assets/grain_menu.png')}
               style={styles.background}
               imageStyle={styles.backgroundImage}
               blurRadius={1.25}
             />
           </Animated.View>
         </View>
-        <Animated.View style={[styles.content, backgroundStyle]}>
+        
+        {/* Content Layer */}
+        <View style={[styles.content]}>
           <View style={[getDirection(position)]}>
             <FloatingActionIndicator
               {...items[currentIndex]}
@@ -185,7 +185,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
               />
             ))}
           </View>
-        </Animated.View>
+        </View>
       </Animated.View>
     </Pressable>
   );
@@ -254,9 +254,6 @@ const styles = StyleSheet.create({
     width: 'auto',
   },
   backgroundContainer: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
     overflow: 'hidden',
     borderRadius: 35,
   },
