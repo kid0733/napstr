@@ -1,15 +1,17 @@
-import { Tabs, usePathname } from 'expo-router'
+import { Tabs } from 'expo-router'
+import { MaterialIcons } from '@expo/vector-icons'
 import { colors } from '@/constants/tokens'
-import { styles } from '@/styles'
+import { NowPlayingBar } from '@/components/NowPlayingBar'
+import { View, Dimensions, StyleSheet } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { NavigationBar } from '@/components/FloatingActionBar/NavigationBar'
-import { View, Dimensions, StyleSheet } from 'react-native'
 import { AnimatedTitle } from '@/components/AnimatedTitle'
+import { usePathname } from 'expo-router'
 
-export default function TabLayout() {
+export default function TabsLayout() {
     const pathname = usePathname()
     const screenHeight = Dimensions.get('window').height
-    
+
     let currentTitle = 'Songs'
     if (pathname?.includes('/favourites')) {
         currentTitle = 'Favourites'
@@ -20,7 +22,7 @@ export default function TabLayout() {
     }
 
     return (
-        <SafeAreaView style={[layoutStyles.container, { backgroundColor: colors.background }]}>
+        <SafeAreaView style={[layoutStyles.container]}>
             {/* Title Section */}
             <View style={layoutStyles.titleSection}>
                 <AnimatedTitle title={currentTitle} />
@@ -43,32 +45,31 @@ export default function TabLayout() {
                         name="(songs)"
                         options={{
                             title: 'Songs',
-                            tabBarLabel: 'Songs',
-                        }}
-                    />
-                    <Tabs.Screen
-                        name="favourites/index"
-                        options={{
-                            title: 'Favourites',
-                            tabBarLabel: 'Favourites',
-                        }}
-                    />
-                    <Tabs.Screen
-                        name="playlists/index"
-                        options={{
-                            title: 'Playlists',
-                            tabBarLabel: 'Playlists',
                         }}
                     />
                     <Tabs.Screen
                         name="artists/index"
                         options={{
                             title: 'Artists',
-                            tabBarLabel: 'Artists',
+                        }}
+                    />
+                    <Tabs.Screen
+                        name="playlists/index"
+                        options={{
+                            title: 'Playlists',
+                        }}
+                    />
+                    <Tabs.Screen
+                        name="favourites/index"
+                        options={{
+                            title: 'Favourites',
                         }}
                     />
                 </Tabs>
             </View>
+
+            {/* Now Playing Bar */}
+            <NowPlayingBar />
         </SafeAreaView>
     )
 }
@@ -86,11 +87,11 @@ const layoutStyles = StyleSheet.create({
     },
     menuSection: {
         paddingHorizontal: 16,
-        marginTop: Dimensions.get('window').height * 0.005, // 5% from title
+        marginTop: Dimensions.get('window').height * 0.005,
     },
     contentSection: {
         flex: 1,
-        marginTop: Dimensions.get('window').height * 0.075, // 5% from menu
+        marginTop: Dimensions.get('window').height * 0.075,
         paddingHorizontal: 0,
     },
 });

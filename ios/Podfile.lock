@@ -221,6 +221,8 @@ PODS:
     - ExpoModulesCore
   - ExpoFont (13.0.1):
     - ExpoModulesCore
+  - ExpoHaptics (14.0.0):
+    - ExpoModulesCore
   - ExpoHead (4.0.11):
     - ExpoModulesCore
   - ExpoKeepAwake (14.0.1):
@@ -252,7 +254,7 @@ PODS:
     - Yoga
   - ExpoSensors (14.0.1):
     - ExpoModulesCore
-  - ExpoSplashScreen (0.29.16):
+  - ExpoSplashScreen (0.29.18):
     - ExpoModulesCore
   - ExpoSystemUI (4.0.5):
     - ExpoModulesCore
@@ -2002,6 +2004,7 @@ DEPENDENCIES:
   - ExpoAsset (from `../node_modules/expo-asset/ios`)
   - ExpoFileSystem (from `../node_modules/expo-file-system/ios`)
   - ExpoFont (from `../node_modules/expo-font/ios`)
+  - ExpoHaptics (from `../node_modules/expo-haptics/ios`)
   - ExpoHead (from `../node_modules/expo-router/ios`)
   - ExpoKeepAwake (from `../node_modules/expo-keep-awake/ios`)
   - ExpoLinking (from `../node_modules/expo-linking/ios`)
@@ -2109,6 +2112,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/expo-file-system/ios"
   ExpoFont:
     :path: "../node_modules/expo-font/ios"
+  ExpoHaptics:
+    :path: "../node_modules/expo-haptics/ios"
   ExpoHead:
     :path: "../node_modules/expo-router/ios"
   ExpoKeepAwake:
@@ -2271,12 +2276,13 @@ SPEC CHECKSUMS:
   ExpoAsset: 8138f2a9ec55ae1ad7c3871448379f7d97692d15
   ExpoFileSystem: dc2679a2b5d4c465ca881129074da95faee943d5
   ExpoFont: 7522d869d84ee2ee8093ee997fef5b86f85d856b
+  ExpoHaptics: e636188d1d5f7ccb79f3c1bfab47aaf5a1768c73
   ExpoHead: c2695f9e8d685d6fa76e7a42006b0b3420cf2d50
   ExpoKeepAwake: 783e68647b969b210a786047c3daa7b753dcac1f
   ExpoLinking: a8332a219379ba80f8e612d5a5de4a3da446886e
   ExpoModulesCore: f7db8b4faee7e5b94ad55f2bf781781a0bcf934d
   ExpoSensors: 55eef9972309aa8ec26bf5922040453e4c5cf7df
-  ExpoSplashScreen: ecfb699d3d04a7721688aba0a2eb61615eae572e
+  ExpoSplashScreen: 5818efe67bdbcc862b97fef589571c5b4d53fa7d
   ExpoSystemUI: e41835aa059bd79369f3b398b4f2b64ed4bfa5c6
   EXUpdatesInterface: 1dcebac98ac5dad4289e6ff2bd5616822e894397
   FBLazyVector: be7314029d6ec6b90f0f75ce1195b8130ed9ac4f

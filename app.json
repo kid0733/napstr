@@ -39,6 +39,22 @@
         {
           "motionPermission": "Allow Napstr to access your device motion for interactive UI effects"
         }
+      ],
+      [
+        "expo-asset",
+        {
+          "assets": [
+            "./assets/grain_menu.png",
+            "./assets/title.otf",
+            "./assets/dosis_extra-light.ttf",
+            "./assets/dosis_light.ttf",
+            "./assets/dosis_book.ttf",
+            "./assets/dosis_medium.ttf",
+            "./assets/dosis_semi-bold.ttf",
+            "./assets/dosis_bold.ttf",
+            "./assets/dosis_extra-bold.ttf"
+          ]
+        }
       ]
     ],
     "experiments": {

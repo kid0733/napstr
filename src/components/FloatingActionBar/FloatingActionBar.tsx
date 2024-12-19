@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, ViewStyle, StyleProp, ImageBackground, Pressable } from 'react-native';
+import { StyleSheet, View, ViewStyle, StyleProp, ImageBackground, Pressable, Dimensions } from 'react-native';
 import Animated, { 
   useSharedValue, 
   withTiming, 
@@ -8,6 +8,7 @@ import Animated, {
   withSequence,
   cancelAnimation
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 
 import { FloatingActionButton, FloatingActionButtonProps } from './FloatingActionButton';
 import { FloatingActionIndicator } from './FloatingActionIndicator';
@@ -24,6 +25,10 @@ export interface FloatingActionBarProps {
   selectedIndex?: number;
   style?: StyleProp<ViewStyle>;
 }
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const NAV_WIDTH = SCREEN_WIDTH * 0.9; // 90% of screen width
+const HORIZONTAL_MARGIN = (SCREEN_WIDTH - NAV_WIDTH) / 2;
 
 export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
   items = [],
@@ -74,7 +79,14 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
     }, 5000);
   }, []);
 
-  const handleActivation = useCallback(() => {
+  const handleActivation = useCallback(async () => {
+    try {
+      // Trigger heavy impact haptic feedback
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    } catch (error) {
+      console.warn('Haptics not available:', error);
+    }
+
     setIsActive(true);
     backgroundOpacity.value = withTiming(1, { duration: 300 });
     
@@ -113,29 +125,31 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
 
   const backgroundStyle = useAnimatedStyle(() => {
     return {
-      opacity: backgroundOpacity.value,
+      opacity: 1,
       backgroundColor: 'rgba(45,52,35,0.0)',
       shadowColor: '#000',
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.15,
       shadowRadius: 8,
       elevation: 5,
+      borderRadius: 35,
+      overflow: 'hidden',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.1)',
     };
   });
 
   const backgroundImageStyle = useAnimatedStyle(() => {
     return {
-      opacity: backgroundOpacity.value,
+      opacity: backgroundOpacity.value * 0.5,
       transform: [
         { translateX: bgOffsetX.value },
         { translateY: bgOffsetY.value },
         { scale: 1.2 }
       ],
-      width: '120%',
-      height: '120%',
-      borderWidth: 0.5,
-      borderColor: 'rgba(255,255,255,0.5)',
-      borderRadius: 35,
+      width: '100%',
+      height: '100%',
+      position: 'absolute',
     };
   });
 
@@ -146,7 +160,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
     >
       <Animated.View style={[animatedStyle]}>
         {/* Background Layer */}
-        <View style={[styles.backgroundContainer, { position: 'absolute', width: '100%', height: '100%' }]}>
+        <Animated.View style={[styles.backgroundContainer, backgroundStyle]}>
           <Animated.View style={backgroundImageStyle}>
             <ImageBackground
               source={require('../../../assets/grain_menu.png')}
@@ -155,7 +169,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
               blurRadius={1.25}
             />
           </Animated.View>
-        </View>
+        </Animated.View>
         
         {/* Content Layer */}
         <View style={[styles.content]}>
@@ -173,7 +187,14 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
                 {...item}
                 {...size}
                 key={index}
-                onPress={() => {
+                onPress={async () => {
+                  try {
+                    // Trigger medium impact haptic feedback for button presses
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  } catch (error) {
+                    console.warn('Haptics not available:', error);
+                  }
+                  
                   if (index !== currentIndex) {
                     setCurrentIndex(index);
                     onPress(index);
@@ -199,14 +220,10 @@ const getPositions = (
     case 'top':
       return {
         top: offset,
-        left: 0,
-        right: 0,
       };
     case 'bottom':
       return {
         bottom: offset,
-        left: 0,
-        right: 0,
       };
     case 'left':
       return {
@@ -251,11 +268,14 @@ const styles = StyleSheet.create({
     zIndex: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    width: 'auto',
+    width: NAV_WIDTH,
+    left: HORIZONTAL_MARGIN,
   },
   backgroundContainer: {
-    overflow: 'hidden',
-    borderRadius: 35,
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
   },
   background: {
     width: '100%',
@@ -263,7 +283,6 @@ const styles = StyleSheet.create({
   },
   backgroundImage: {
     resizeMode: 'cover',
-    borderRadius: 35,
   },
   content: {
     padding: 8,
