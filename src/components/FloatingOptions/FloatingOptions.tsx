@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { View, StyleSheet, Pressable, Animated, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
+import { Blur } from '@/components/Blur/Blur';
 
 interface FloatingOption {
   icon: keyof typeof Ionicons.glyphMap;
@@ -106,11 +107,19 @@ export const FloatingOptions: React.FC<FloatingOptionsProps> = ({
                 option.onPress();
               }}
             >
-              <Ionicons
-                name={option.isActive ? option.icon.replace('-outline', '') as keyof typeof Ionicons.glyphMap : option.icon}
-                size={20}
-                color={option.color || colors.text}
+              <Blur
+                style={styles.blurContainer}
+                intensity={20}
+                backgroundColor="rgba(25, 70, 25, 0.5)"
+                opacity={0.85}
               />
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', zIndex: 2 }}>
+                <Ionicons
+                  name={option.isActive ? option.icon.replace('-outline', '') as keyof typeof Ionicons.glyphMap : option.icon}
+                  size={20}
+                  color={option.color || colors.text}
+                />
+              </View>
             </Pressable>
           ))}
         </View>
@@ -135,7 +144,7 @@ const styles = StyleSheet.create({
     zIndex: 1001,
   },
   topPosition: {
-    bottom: 90,
+    bottom: 140,
   },
   bottomPosition: {
     top: '100%',
@@ -146,16 +155,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingVertical: 0,
   },
   optionButton: {
     width: '33%',
     height: 52,
     borderRadius: 8,
-    backgroundColor: 'rgba(18, 18, 18, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  blurContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 }); 

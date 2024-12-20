@@ -7,6 +7,8 @@ import { api } from '@/services/api'
 import { colors } from '@/constants/tokens'
 import { Asset } from 'expo-asset'
 import * as Haptics from 'expo-haptics'
+import { PlayerProvider } from '@/contexts/PlayerContext'
+
 
 // Keep the splash screen visible while we initialize
 SplashScreen.preventAutoHideAsync()
@@ -170,7 +172,11 @@ export default function RootLayout() {
         );
     }
 
-    return <Stack screenOptions={{ headerShown: false }} />;
+    return (
+        <PlayerProvider>
+            <Stack screenOptions={{ headerShown: false }} />
+        </PlayerProvider>
+    );
 }
 
 const styles = StyleSheet.create<Styles>({

@@ -81,17 +81,21 @@ const layoutStyles = StyleSheet.create({
     },
     titleSection: {
         paddingLeft: 16,
-        paddingTop: 16,
+        paddingTop: 0,
         marginLeft: 30,
         alignItems: 'center',
+        marginBottom: 0,
+        marginTop: 0,
     },
     menuSection: {
         paddingHorizontal: 16,
         marginTop: Dimensions.get('window').height * 0.005,
+        marginBottom: 10,
     },
     contentSection: {
         flex: 1,
-        marginTop: Dimensions.get('window').height * 0.075,
+        marginTop: Dimensions.get('window').height * 0.065,
         paddingHorizontal: 0,
+        paddingBottom: 90,
     },
 });

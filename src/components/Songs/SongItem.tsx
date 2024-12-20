@@ -2,92 +2,119 @@ import React, { useState } from 'react';
 import { View, Text, Image, StyleSheet, Pressable } from 'react-native';
 import { colors } from '@/constants/tokens';
 import { Song } from '@/services/api';
-import { api } from '@/services/api';
-import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
+import { usePlayer } from '@/contexts/PlayerContext';
+import { SongOptions } from '@/components/SongOptions/SongOptions';
 
 interface SongItemProps {
     song: Song;
-    onPress?: (song: Song) => void;
+    nextSong?: Song;
+    allSongs: Song[];
 }
 
-export const SongItem: React.FC<SongItemProps> = ({ song }) => {
-    const { title, artists, duration_ms, album_art } = song;
-    const [sound, setSound] = useState<Audio.Sound>();
+export const SongItem: React.FC<SongItemProps> = ({ song, allSongs }) => {
+    const { title, artists, album_art } = song;
+    const { currentSong, isPlaying, playSong, playPause } = usePlayer();
+    const [showOptions, setShowOptions] = useState(false);
+
+    const isCurrentSong = currentSong?.track_id === song.track_id;
 
     async function handlePress() {
         try {
-            console.log('Loading Sound');
-            
-            // Stop and unload any existing sound
-            if (sound) {
-                console.log('Unloading previous sound');
-                await sound.unloadAsync();
+            if (isCurrentSong) {
+                await playPause();
+            } else {
+                const songIndex = allSongs.findIndex(s => s.track_id === song.track_id);
+                const queue = allSongs.slice(songIndex);
+                await playSong(song, queue);
             }
-
-            // Get stream URL
-            console.log('Getting stream URL');
-            const { url } = await api.songs.getStreamUrl(song.track_id);
-            console.log('Stream URL:', url);
-
-            // Enable audio playback in silent mode (iOS)
-            await Audio.setAudioModeAsync({
-                playsInSilentModeIOS: true,
-                staysActiveInBackground: true,
-            });
-
-            // Create and load the sound
-            console.log('Creating sound object');
-            const { sound: newSound } = await Audio.Sound.createAsync(
-                { uri: url },
-                { shouldPlay: true }
-            );
-            setSound(newSound);
-            console.log('Sound playing');
-
         } catch (error) {
             console.error('Error:', error);
         }
     }
-    
-    // Convert duration from ms to mm:ss format
-    const formatDuration = (ms: number): string => {
-        const totalSeconds = Math.floor(ms / 1000);
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-    };
 
     return (
-        <Pressable 
-            style={styles.container}
-            onPress={handlePress}
-        >
-            <Image 
-                source={{ uri: album_art }} 
-                style={styles.albumArt}
+        <>
+            <SongOptions
+                visible={showOptions}
+                onClose={() => setShowOptions(false)}
             />
-            <View style={styles.info}>
-                <Text style={styles.title}>{title}</Text>
-                <Text style={styles.artist}>{artists.join(', ')}</Text>
-            </View>
-            <Text style={styles.duration}>{formatDuration(duration_ms)}</Text>
-        </Pressable>
+            <Pressable 
+                style={[
+                    styles.container,
+                    isCurrentSong && styles.currentSongContainer
+                ]}
+                onPress={handlePress}
+            >
+                <View style={styles.content}>
+                    <Image 
+                        source={{ uri: album_art }} 
+                        style={styles.albumArt}
+                    />
+                    <View style={styles.info}>
+                        <Text 
+                            style={[
+                                styles.title,
+                                isCurrentSong && styles.currentSongText
+                            ]}
+                            numberOfLines={1}
+                        >
+                            {title}
+                        </Text>
+                        <Text 
+                            style={styles.artist}
+                            numberOfLines={1}
+                        >
+                            {artists.join(', ')}
+                        </Text>
+                    </View>
+                    {isCurrentSong && (
+                        <View style={styles.playStateContainer}>
+                            <Ionicons 
+                                name={isPlaying ? "pause" : "play"} 
+                                size={24} 
+                                color={colors.greenPrimary}
+                            />
+                        </View>
+                    )}
+                    <Pressable 
+                        style={styles.optionsButton}
+                        onPress={(e) => {
+                            e.stopPropagation();
+                            setShowOptions(true);
+                        }}
+                    >
+                        <Ionicons 
+                            name="ellipsis-vertical" 
+                            size={16} 
+                            color={colors.greenTertiary}
+                        />
+                    </Pressable>
+                </View>
+            </Pressable>
+        </>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
+        borderRadius: 12,
+        marginBottom: 8,
+        overflow: 'hidden',
+        backgroundColor: 'rgba(45, 54, 47, 0.38)',
+    },
+    content: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 12,
         paddingHorizontal: 16,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        borderRadius: 12,
-        marginBottom: 8,
+    },
+    currentSongContainer: {
+        backgroundColor: 'rgba(25, 70, 25, 0.15)',
     },
     albumArt: {
         width: 50,
-        height: 50,
+        height: 40,
         borderRadius: 8,
     },
     info: {
@@ -95,18 +122,24 @@ const styles = StyleSheet.create({
         marginLeft: 16,
     },
     title: {
-        fontSize: 16,
+        fontSize: 13,
         fontWeight: '600',
         color: colors.text,
         marginBottom: 4,
     },
+    currentSongText: {
+        color: colors.greenPrimary,
+    },
     artist: {
-        fontSize: 14,
+        fontSize: 10,
         color: colors.greenTertiary,
     },
-    duration: {
-        fontSize: 14,
-        color: colors.greenTertiary,
-        marginLeft: 16,
+    playStateContainer: {
+        marginRight: 16,
+    },
+    optionsButton: {
+        padding: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 }); 

@@ -18,10 +18,11 @@ export const SongsList: React.FC<SongsListProps> = ({
     ListFooterComponent,
     contentContainerStyle,
 }) => {
-    const renderItem: ListRenderItem<Song> = ({ item }) => (
+    const renderItem: ListRenderItem<Song> = ({ item, index }) => (
         <SongItem 
-            song={item} 
-            onPress={onSongPress}
+            song={item}
+            nextSong={songs[index + 1]}
+            allSongs={songs}
         />
     );
 
@@ -50,5 +51,6 @@ const styles = StyleSheet.create({
     },
     listContent: {
         flexGrow: 1,
+        paddingBottom: 0,
     },
 }); 
