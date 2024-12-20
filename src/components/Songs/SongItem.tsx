@@ -1,15 +1,53 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, Image, StyleSheet, Pressable } from 'react-native';
 import { colors } from '@/constants/tokens';
 import { Song } from '@/services/api';
+import { api } from '@/services/api';
+import { Audio } from 'expo-av';
 
 interface SongItemProps {
     song: Song;
     onPress?: (song: Song) => void;
 }
 
-export const SongItem: React.FC<SongItemProps> = ({ song, onPress }) => {
+export const SongItem: React.FC<SongItemProps> = ({ song }) => {
     const { title, artists, duration_ms, album_art } = song;
+    const [sound, setSound] = useState<Audio.Sound>();
+
+    async function handlePress() {
+        try {
+            console.log('Loading Sound');
+            
+            // Stop and unload any existing sound
+            if (sound) {
+                console.log('Unloading previous sound');
+                await sound.unloadAsync();
+            }
+
+            // Get stream URL
+            console.log('Getting stream URL');
+            const { url } = await api.songs.getStreamUrl(song.track_id);
+            console.log('Stream URL:', url);
+
+            // Enable audio playback in silent mode (iOS)
+            await Audio.setAudioModeAsync({
+                playsInSilentModeIOS: true,
+                staysActiveInBackground: true,
+            });
+
+            // Create and load the sound
+            console.log('Creating sound object');
+            const { sound: newSound } = await Audio.Sound.createAsync(
+                { uri: url },
+                { shouldPlay: true }
+            );
+            setSound(newSound);
+            console.log('Sound playing');
+
+        } catch (error) {
+            console.error('Error:', error);
+        }
+    }
     
     // Convert duration from ms to mm:ss format
     const formatDuration = (ms: number): string => {
@@ -22,7 +60,7 @@ export const SongItem: React.FC<SongItemProps> = ({ song, onPress }) => {
     return (
         <Pressable 
             style={styles.container}
-            onPress={() => onPress?.(song)}
+            onPress={handlePress}
         >
             <Image 
                 source={{ uri: album_art }} 
