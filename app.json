@@ -9,9 +9,9 @@
     "scheme": "napstr",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#000000"
+      "image": "./assets/splash.png",
+      "resizeMode": "native",
+      "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": true,
@@ -25,7 +25,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#ffffff"
       },
       "package": "com.karki0733.napstr",
       "permissions": ["android.permission.HIGH_SAMPLING_RATE_SENSORS"]

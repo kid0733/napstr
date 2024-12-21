@@ -1,21 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Stack } from 'expo-router'
-import { View, Text, Pressable, StyleSheet, ViewStyle, TextStyle, Image } from 'react-native'
-import * as SplashScreen from 'expo-splash-screen'
+import { View, Text, Pressable, StyleSheet, ViewStyle, TextStyle } from 'react-native'
 import { useFonts } from 'expo-font'
 import { api } from '@/services/api'
 import { colors } from '@/constants/tokens'
-import { Asset } from 'expo-asset'
 import * as Haptics from 'expo-haptics'
 import { PlayerProvider } from '@/contexts/PlayerContext'
-
-
-// Keep the splash screen visible while we initialize
-SplashScreen.preventAutoHideAsync()
+import { SplashOverlay } from '@/components/SplashOverlay/SplashOverlay'
 
 // Define static assets
 const STATIC_ASSETS = {
-    menuBackground: require('../../assets/grain_menu.png'),
     fonts: {
         'Title': require('../../assets/title.otf'),
         'dosis_extra-light': require('../../assets/dosis_extra-light.ttf'),
@@ -36,146 +30,101 @@ interface Styles {
     retryButtonText: TextStyle;
 }
 
-async function cacheImages(images: string[]) {
-    const uniqueImages = [...new Set(images)]; // Remove duplicates
-    return Promise.all(
-        uniqueImages.map(async imageUrl => {
-            if (!imageUrl) return;
-            try {
-                await Image.prefetch(imageUrl);
-                console.log('Cached remote image:', imageUrl.slice(-20)); // Only log the end of the URL
-            } catch (error) {
-                console.warn('Failed to cache image:', imageUrl.slice(-20), error);
-            }
-        })
-    );
-}
-
-async function loadStaticAssets() {
-    try {
-        // Preload menu background
-        const menuAsset = Asset.fromModule(STATIC_ASSETS.menuBackground);
-        await menuAsset.downloadAsync();
-        
-        // Ensure the asset is fully loaded
-        if (!menuAsset.localUri && !menuAsset.uri) {
-            throw new Error('Menu background failed to load completely');
-        }
-        
-        console.log('Menu background loaded successfully');
-        return true;
-    } catch (error) {
-        console.warn('Failed to load static assets:', error);
-        return false;
-    }
-}
-
 export default function RootLayout() {
     const [isReady, setIsReady] = useState(false);
-    const [assetsLoaded, setAssetsLoaded] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [isRetrying, setIsRetrying] = useState(false);
+    const [showSplash, setShowSplash] = useState(true);
+    const [shouldInitialize, setShouldInitialize] = useState(true);
 
     // Load fonts
-    const [fontsLoaded, fontError] = useFonts(STATIC_ASSETS.fonts);
-
-    const initialize = useCallback(async () => {
-        try {
-            setIsRetrying(true);
-            setError(null);
-
-            // Load static assets first
-            console.log('Loading static assets...');
-            const staticAssetsLoaded = await loadStaticAssets();
-            if (!staticAssetsLoaded) {
-                throw new Error('Failed to load static assets');
-            }
-            setAssetsLoaded(true);
-
-            // Initialize API and fetch songs
-            console.log('Initializing API...');
-            await api.initialize();
-            const songs = await api.songs.getAll();
-            
-            // Cache album art with progress tracking
-            console.log('Caching album art...');
-            const albumArts = songs.map(song => song.album_art).filter(Boolean);
-            await cacheImages(albumArts);
-            
-            console.log('All assets loaded successfully');
-            setIsReady(true);
-        } catch (error) {
-            console.error('Initialization failed:', error);
-            setError('Failed to connect to server. Please check your connection and try again.');
-        } finally {
-            setIsRetrying(false);
-        }
-    }, []);
-
-    useEffect(() => {
-        initialize();
-    }, [initialize]);
+    const [fontsLoaded] = useFonts(STATIC_ASSETS.fonts);
 
     useEffect(() => {
         async function prepare() {
+            if (!shouldInitialize) return;
+            
             try {
-                // Keep the splash screen visible while we fetch resources
-                await SplashScreen.preventAutoHideAsync();
+                setIsRetrying(true);
+                setError(null);
+
+                // Initialize API and fetch songs first
+                await api.initialize();
+                await api.songs.getAll();
                 
-                // Only hide splash screen when everything is ready
-                if (isReady && fontsLoaded && assetsLoaded) {
-                    // Add a small delay to ensure all UI elements are ready
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    await SplashScreen.hideAsync();
-                }
-            } catch (e) {
-                console.warn('Error preparing app:', e);
+                setIsReady(true);
+                setShouldInitialize(false);
+            } catch (error) {
+                console.error('Initialization failed:', error);
+                setError('Failed to connect to server. Please check your connection and try again.');
+                setShouldInitialize(false);
+            } finally {
+                setIsRetrying(false);
             }
         }
 
         prepare();
-    }, [isReady, fontsLoaded, assetsLoaded]);
+    }, [shouldInitialize]);
 
-    // Show loading screen while resources are loading
-    if (!isReady || !fontsLoaded || !assetsLoaded) {
-        return null; // Keep splash screen visible
-    }
+    const handleSplashFinish = () => {
+        // Only hide splash if everything is ready
+        if (isReady && fontsLoaded && !error) {
+            setShowSplash(false);
+        }
+    };
 
-    if (error) {
-        return (
-            <View style={styles.errorContainer}>
-                <Text style={[styles.errorText, { fontFamily: 'dosis_bold' }]}>{error}</Text>
-                <Text style={[styles.errorSubtext, { fontFamily: 'dosis_medium' }]}>
-                    Please make sure the server is running and you're on the same network.
-                </Text>
-                <Pressable 
-                    style={[
-                        styles.retryButton,
-                        { opacity: isRetrying ? 0.7 : 1 }
-                    ]}
-                    onPress={async () => {
-                        try {
-                            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-                            initialize();
-                        } catch (error) {
-                            console.warn('Haptics not available:', error);
-                            initialize();
-                        }
-                    }}
-                    disabled={isRetrying}
-                >
-                    <Text style={[styles.retryButtonText, { fontFamily: 'dosis_bold' }]}>
-                        {isRetrying ? 'Retrying...' : 'Retry Connection'}
-                    </Text>
-                </Pressable>
-            </View>
-        );
-    }
+    const handleRetry = async () => {
+        try {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+            setIsReady(false);
+            setShowSplash(true);
+            setError(null);
+            setShouldInitialize(true);
+        } catch (error) {
+            console.warn('Haptics not available:', error);
+            setIsReady(false);
+            setShowSplash(true);
+            setError(null);
+            setShouldInitialize(true);
+        }
+    };
 
+    // Always render the app container with black background
     return (
-        <PlayerProvider>
-            <Stack screenOptions={{ headerShown: false }} />
-        </PlayerProvider>
+        <View style={{ flex: 1, backgroundColor: '#000000' }}>
+            {(isReady && fontsLoaded && !error) ? (
+                <PlayerProvider>
+                    <Stack screenOptions={{ headerShown: false }} />
+                </PlayerProvider>
+            ) : error ? (
+                <View style={styles.errorContainer}>
+                    <Text style={[styles.errorText, { fontFamily: 'dosis_bold' }]}>{error}</Text>
+                    <Text style={[styles.errorSubtext, { fontFamily: 'dosis_medium' }]}>
+                        Please make sure the server is running and you're on the same network.
+                    </Text>
+                    <Pressable 
+                        style={[
+                            styles.retryButton,
+                            { opacity: isRetrying ? 0.7 : 1 }
+                        ]}
+                        onPress={handleRetry}
+                        disabled={isRetrying}
+                    >
+                        <Text style={[styles.retryButtonText, { fontFamily: 'dosis_bold' }]}>
+                            {isRetrying ? 'Retrying...' : 'Retry Connection'}
+                        </Text>
+                    </Pressable>
+                </View>
+            ) : null}
+            
+            {/* Always show splash until explicitly hidden */}
+            {showSplash && (
+                <SplashOverlay 
+                    onFinish={handleSplashFinish}
+                    minDisplayTime={3500}
+                />
+            )}
+        </View>
     );
 }
 
