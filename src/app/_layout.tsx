@@ -7,6 +7,7 @@ import { colors } from '@/constants/tokens'
 import * as Haptics from 'expo-haptics'
 import { PlayerProvider } from '@/contexts/PlayerContext'
 import { SplashOverlay } from '@/components/SplashOverlay/SplashOverlay'
+import { GestureHandlerRootView } from 'react-native-gesture-handler'
 
 // Define static assets
 const STATIC_ASSETS = {
@@ -91,40 +92,42 @@ export default function RootLayout() {
 
     // Always render the app container with black background
     return (
-        <View style={{ flex: 1, backgroundColor: '#000000' }}>
-            {(isReady && fontsLoaded && !error) ? (
-                <PlayerProvider>
-                    <Stack screenOptions={{ headerShown: false }} />
-                </PlayerProvider>
-            ) : error ? (
-                <View style={styles.errorContainer}>
-                    <Text style={[styles.errorText, { fontFamily: 'dosis_bold' }]}>{error}</Text>
-                    <Text style={[styles.errorSubtext, { fontFamily: 'dosis_medium' }]}>
-                        Please make sure the server is running and you're on the same network.
-                    </Text>
-                    <Pressable 
-                        style={[
-                            styles.retryButton,
-                            { opacity: isRetrying ? 0.7 : 1 }
-                        ]}
-                        onPress={handleRetry}
-                        disabled={isRetrying}
-                    >
-                        <Text style={[styles.retryButtonText, { fontFamily: 'dosis_bold' }]}>
-                            {isRetrying ? 'Retrying...' : 'Retry Connection'}
+        <GestureHandlerRootView style={{ flex: 1 }}>
+            <View style={{ flex: 1, backgroundColor: '#000000' }}>
+                {(isReady && fontsLoaded && !error) ? (
+                    <PlayerProvider>
+                        <Stack screenOptions={{ headerShown: false }} />
+                    </PlayerProvider>
+                ) : error ? (
+                    <View style={styles.errorContainer}>
+                        <Text style={[styles.errorText, { fontFamily: 'dosis_bold' }]}>{error}</Text>
+                        <Text style={[styles.errorSubtext, { fontFamily: 'dosis_medium' }]}>
+                            Please make sure the server is running and you're on the same network.
                         </Text>
-                    </Pressable>
-                </View>
-            ) : null}
-            
-            {/* Always show splash until explicitly hidden */}
-            {showSplash && (
-                <SplashOverlay 
-                    onFinish={handleSplashFinish}
-                    minDisplayTime={3500}
-                />
-            )}
-        </View>
+                        <Pressable 
+                            style={[
+                                styles.retryButton,
+                                { opacity: isRetrying ? 0.7 : 1 }
+                            ]}
+                            onPress={handleRetry}
+                            disabled={isRetrying}
+                        >
+                            <Text style={[styles.retryButtonText, { fontFamily: 'dosis_bold' }]}>
+                                {isRetrying ? 'Retrying...' : 'Retry Connection'}
+                            </Text>
+                        </Pressable>
+                    </View>
+                ) : null}
+                
+                {/* Always show splash until explicitly hidden */}
+                {showSplash && (
+                    <SplashOverlay 
+                        onFinish={handleSplashFinish}
+                        minDisplayTime={3500}
+                    />
+                )}
+            </View>
+        </GestureHandlerRootView>
     );
 }
 

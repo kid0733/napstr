@@ -1,251 +1,475 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, useReducer } from 'react';
 import { Song } from '@/services/api';
-import { Audio } from 'expo-av';
+import { Audio, AVPlaybackStatus } from 'expo-av';
 import { api } from '@/services/api';
 
 type PlaySongFunction = (song: Song, queue?: Song[]) => Promise<void>;
 type PlayNextFunction = () => Promise<void>;
 type PlayPreviousFunction = () => Promise<void>;
 
-interface PlayerContextType {
-    currentSong?: Song;
+export interface PlayerContextType {
+    currentSong: Song | null;
     isPlaying: boolean;
-    sound?: Audio.Sound;
-    queue: Song[];
-    currentIndex: number;
     isShuffled: boolean;
-    repeatMode: 'off' | 'all' | 'one';
+    repeatMode: 'off' | 'one' | 'all';
+    progress: number;
+    duration: number;
+    position: number;
+    isMaximized: boolean;
     playPause: () => Promise<void>;
-    playSong: PlaySongFunction;
-    playNext: PlayNextFunction;
-    playPrevious: PlayPreviousFunction;
+    playNext: () => Promise<void>;
+    playPrevious: () => Promise<void>;
     toggleShuffle: () => void;
     toggleRepeat: () => void;
+    toggleMaximized: () => void;
+    playSong: (song: Song) => Promise<void>;
 }
 
-const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
+const defaultContext: PlayerContextType = {
+    currentSong: null,
+    isPlaying: false,
+    isShuffled: false,
+    repeatMode: 'off',
+    progress: 0,
+    duration: 0,
+    position: 0,
+    isMaximized: false,
+    playPause: async () => {},
+    playNext: async () => {},
+    playPrevious: async () => {},
+    toggleShuffle: () => {},
+    toggleRepeat: () => {},
+    toggleMaximized: () => {},
+    playSong: async () => {},
+};
+
+const PlayerContext = createContext<PlayerContextType>(defaultContext);
+
+type PlayerState = {
+    currentSong: Song | null;
+    isPlaying: boolean;
+    isShuffled: boolean;
+    repeatMode: 'off' | 'all' | 'one';
+    progress: number;
+    duration: number;
+    position: number;
+    isMaximized: boolean;
+    queue: Song[];
+    originalQueue: Song[];
+    currentIndex: number;
+};
+
+type PlayerAction = 
+    | { type: 'SET_CURRENT_SONG'; payload: Song | null }
+    | { type: 'SET_PLAYING'; payload: boolean }
+    | { type: 'SET_PROGRESS'; payload: number }
+    | { type: 'SET_DURATION'; payload: number }
+    | { type: 'SET_POSITION'; payload: number }
+    | { type: 'SET_MAXIMIZED'; payload: boolean }
+    | { type: 'SET_QUEUE'; payload: { queue: Song[]; currentIndex: number } }
+    | { type: 'SET_SHUFFLE'; payload: boolean }
+    | { type: 'SET_REPEAT_MODE'; payload: 'off' | 'all' | 'one' }
+    | { type: 'SET_ORIGINAL_QUEUE'; payload: Song[] }
+    | { type: 'SET_CURRENT_INDEX'; payload: number };
+
+function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
+    switch (action.type) {
+        case 'SET_CURRENT_SONG':
+            return { ...state, currentSong: action.payload };
+        case 'SET_PLAYING':
+            return { ...state, isPlaying: action.payload };
+        case 'SET_PROGRESS':
+            return { ...state, progress: action.payload };
+        case 'SET_DURATION':
+            return { ...state, duration: action.payload };
+        case 'SET_POSITION':
+            return { ...state, position: action.payload };
+        case 'SET_MAXIMIZED':
+            return { ...state, isMaximized: action.payload };
+        case 'SET_QUEUE':
+            return { 
+                ...state, 
+                queue: action.payload.queue,
+                currentIndex: action.payload.currentIndex
+            };
+        case 'SET_SHUFFLE':
+            return { ...state, isShuffled: action.payload };
+        case 'SET_REPEAT_MODE':
+            return { ...state, repeatMode: action.payload };
+        case 'SET_ORIGINAL_QUEUE':
+            return { ...state, originalQueue: action.payload };
+        case 'SET_CURRENT_INDEX':
+            return { ...state, currentIndex: action.payload };
+        default:
+            return state;
+    }
+}
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
-    const [currentSong, setCurrentSong] = useState<Song>();
     const [sound, setSound] = useState<Audio.Sound>();
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [queue, setQueue] = useState<Song[]>([]);
-    const [originalQueue, setOriginalQueue] = useState<Song[]>([]);
-    const [currentIndex, setCurrentIndex] = useState(-1);
-    const [isShuffled, setIsShuffled] = useState(false);
-    const [repeatMode, setRepeatMode] = useState<'off' | 'all' | 'one'>('off');
+    const soundRef = useRef<Audio.Sound>();
 
-    // Use refs to break circular dependencies
-    const playSongRef = useRef<PlaySongFunction>();
-    const playNextRef = useRef<PlayNextFunction>();
+    const [state, dispatch] = useReducer(playerReducer, {
+        currentSong: null,
+        isPlaying: false,
+        isShuffled: false,
+        repeatMode: 'off',
+        progress: 0,
+        duration: 0,
+        position: 0,
+        isMaximized: false,
+        queue: [],
+        originalQueue: [],
+        currentIndex: -1,
+    });
 
-    // Shuffle array utility function
-    const shuffleArray = (array: Song[]) => {
+    const [isLoading, setIsLoading] = useState(false);
+    const loadingRef = useRef(false);
+    const progressRef = useRef(state.progress);
+    const positionRef = useRef(state.position);
+    const durationRef = useRef(state.duration);
+    const lastUpdateTimeRef = useRef(0);
+    const handlePlayNextRef = useRef<() => Promise<void>>();
+
+    const shuffleArray = useCallback((array: Song[]) => {
         const newArray = [...array];
         for (let i = newArray.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
         }
         return newArray;
-    };
+    }, []);
 
-    // Cleanup function for sound
     const cleanupSound = useCallback(async (soundToCleanup?: Audio.Sound) => {
         if (!soundToCleanup) return;
         
         try {
+            console.log('Starting sound cleanup...');
             const status = await soundToCleanup.getStatusAsync();
             if (status.isLoaded) {
+                console.log('Sound is loaded, stopping...');
                 await soundToCleanup.stopAsync();
+                console.log('Sound stopped, unloading...');
                 await soundToCleanup.unloadAsync();
+                console.log('Sound cleanup completed successfully');
             }
         } catch (error) {
             console.error('Error cleaning up sound:', error);
         }
     }, []);
 
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            if (sound) {
-                cleanupSound(sound).catch(console.error);
-            }
-        };
-    }, [sound, cleanupSound]);
+    const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
+        if (!status.isLoaded) return;
 
-    const handlePlayNext: PlayNextFunction = useCallback(async () => {
-        if (currentIndex < 0) return;
+        const now = Date.now();
+        const updateInterval = 250;
+        if (now - lastUpdateTimeRef.current < updateInterval) return;
 
-        let nextIndex = currentIndex + 1;
-        
-        if (nextIndex >= queue.length) {
-            if (repeatMode === 'all') {
-                nextIndex = 0;
-            } else if (repeatMode === 'one') {
-                nextIndex = currentIndex;
+        const newProgress = status.positionMillis / (status.durationMillis || 1);
+        const newPosition = status.positionMillis / 1000;
+        const newDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
+
+        progressRef.current = newProgress;
+        positionRef.current = newPosition;
+        durationRef.current = newDuration;
+
+        const shouldUpdateProgress = Math.abs(state.progress - newProgress) > 0.01;
+        const shouldUpdatePosition = Math.abs(state.position - newPosition) > 1;
+        const shouldUpdateDuration = Math.abs(state.duration - newDuration) > 1;
+        const shouldUpdatePlaying = state.isPlaying !== status.isPlaying;
+
+        const updates: PlayerAction[] = [];
+
+        if (shouldUpdateProgress) {
+            updates.push({ type: 'SET_PROGRESS', payload: newProgress });
+        }
+
+        if (shouldUpdatePosition) {
+            updates.push({ type: 'SET_POSITION', payload: newPosition });
+        }
+
+        if (shouldUpdateDuration) {
+            updates.push({ type: 'SET_DURATION', payload: newDuration });
+        }
+
+        if (shouldUpdatePlaying) {
+            updates.push({ type: 'SET_PLAYING', payload: status.isPlaying });
+        }
+
+        if (updates.length > 0) {
+            updates.forEach(update => dispatch(update));
+        }
+
+        lastUpdateTimeRef.current = now;
+
+        if (status.didJustFinish) {
+            if (state.repeatMode === 'one' && soundRef.current) {
+                soundRef.current.replayAsync().catch(console.error);
             } else {
-                return;
+                handlePlayNextRef.current?.().catch(console.error);
             }
         }
+    }, [state.progress, state.position, state.duration, state.isPlaying, state.repeatMode]);
 
-        const nextSong = queue[nextIndex];
-        if (playSongRef.current) {
-            await playSongRef.current(nextSong, queue);
+    useEffect(() => {
+        Audio.setAudioModeAsync({
+            playsInSilentModeIOS: true,
+            staysActiveInBackground: true,
+            shouldDuckAndroid: true,
+            playThroughEarpieceAndroid: false,
+        }).catch(console.error);
+    }, []);
+
+    const playSong: PlaySongFunction = useCallback(async (song: Song, queue?: Song[]) => {
+        if (loadingRef.current) {
+            console.log('Already loading a song, skipping request');
+            return;
         }
-    }, [currentIndex, queue, repeatMode]);
 
-    const playSong: PlaySongFunction = useCallback(async (song, newQueue) => {
         try {
-            setIsPlaying(false);
-            
-            if (sound) {
-                await cleanupSound(sound);
+            loadingRef.current = true;
+            setIsLoading(true);
+            console.log('Starting playSong function...');
+
+            if (soundRef.current) {
+                console.log('Cleaning up existing sound before playing new song...');
+                await cleanupSound(soundRef.current);
+                setSound(undefined);
+                soundRef.current = undefined;
+                console.log('Existing sound cleaned up successfully');
             }
 
-            const { url } = await api.songs.getStreamUrl(song.track_id);
+            const streamData = await api.songs.getStreamUrl(song.track_id);
+            console.log('Got stream URL:', streamData.url);
 
-            await Audio.setAudioModeAsync({
-                playsInSilentModeIOS: true,
-                staysActiveInBackground: true,
-                shouldDuckAndroid: true,
-                playThroughEarpieceAndroid: false,
-            });
-
+            console.log('Creating new sound...');
             const { sound: newSound } = await Audio.Sound.createAsync(
-                { uri: url },
+                { uri: streamData.url },
                 { shouldPlay: true },
                 async (status) => {
                     if (!status.isLoaded) return;
                     
-                    setIsPlaying(status.isPlaying);
+                    dispatch({ type: 'SET_PLAYING', payload: status.isPlaying });
 
                     if (status.didJustFinish) {
-                        if (repeatMode === 'one') {
+                        if (state.repeatMode === 'one') {
                             await newSound.replayAsync();
-                        } else if (playNextRef.current) {
-                            await playNextRef.current();
+                        } else if (handlePlayNextRef.current) {
+                            await handlePlayNextRef.current();
                         }
                     }
                 }
             );
 
-            if (newQueue) {
-                if (isShuffled) {
-                    setOriginalQueue(newQueue);
-                    const remainingSongs = newQueue.filter(s => s.track_id !== song.track_id);
-                    const shuffledRemaining = shuffleArray(remainingSongs);
-                    setQueue([song, ...shuffledRemaining]);
-                    setCurrentIndex(0);
-                } else {
-                    setQueue(newQueue);
-                    const songIndex = newQueue.findIndex(s => s.track_id === song.track_id);
-                    setCurrentIndex(songIndex);
-                }
-            } else {
-                setQueue([song]);
-                setCurrentIndex(0);
-                setOriginalQueue([song]);
+            console.log('Sound created successfully');
+            setSound(newSound);
+            soundRef.current = newSound;
+            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
+            dispatch({ type: 'SET_PLAYING', payload: true });
+
+            if (queue) {
+                const newQueue = state.isShuffled ? shuffleArray(queue) : queue;
+                const currentIndex = newQueue.findIndex(s => s.track_id === song.track_id);
+                dispatch({ type: 'SET_QUEUE', payload: { queue: newQueue, currentIndex } });
+                dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
+            }
+        } catch (error) {
+            console.error('Error in playSong:', error);
+            dispatch({ type: 'SET_PLAYING', payload: false });
+            if (soundRef.current) {
+                await cleanupSound(soundRef.current);
+                setSound(undefined);
+                soundRef.current = undefined;
+            }
+        } finally {
+            loadingRef.current = false;
+            setIsLoading(false);
+        }
+    }, [cleanupSound, state.isShuffled, shuffleArray, state.repeatMode]);
+
+    const handlePlayNext: PlayNextFunction = useCallback(async () => {
+        if (state.queue.length === 0 || state.currentIndex === -1) return;
+        if (loadingRef.current) {
+            console.log('Already loading next song, skipping request');
+            return;
+        }
+
+        try {
+            loadingRef.current = true;
+            setIsLoading(true);
+            console.log('Starting to play next song...');
+
+            if (soundRef.current) {
+                console.log('Cleaning up current sound before playing next...');
+                await cleanupSound(soundRef.current);
+                setSound(undefined);
+                soundRef.current = undefined;
+                console.log('Current sound cleaned up successfully');
             }
 
-            setSound(newSound);
-            setCurrentSong(song);
-            setIsPlaying(true);
+            let nextIndex = state.currentIndex + 1;
+            
+            if (nextIndex >= state.queue.length) {
+                if (state.repeatMode === 'all') {
+                    nextIndex = 0;
+                } else {
+                    dispatch({ type: 'SET_PLAYING', payload: false });
+                    setIsLoading(false);
+                    return;
+                }
+            }
 
+            console.log(`Playing next song at index: ${nextIndex}`);
+            dispatch({ type: 'SET_CURRENT_INDEX', payload: nextIndex });
+            const nextSong = state.queue[nextIndex];
+            await playSong(nextSong, state.queue);
         } catch (error) {
-            console.error('Error playing song:', error);
-            setIsPlaying(false);
-            setCurrentSong(undefined);
-            setSound(undefined);
+            console.error('Error playing next song:', error);
+            dispatch({ type: 'SET_PLAYING', payload: false });
+            if (soundRef.current) {
+                await cleanupSound(soundRef.current);
+                setSound(undefined);
+                soundRef.current = undefined;
+            }
+        } finally {
+            loadingRef.current = false;
+            setIsLoading(false);
         }
-    }, [sound, cleanupSound, isShuffled, repeatMode]);
+    }, [state.queue, state.currentIndex, state.repeatMode, cleanupSound, playSong, isLoading]);
 
-    // Update refs
     useEffect(() => {
-        playSongRef.current = playSong;
-        playNextRef.current = handlePlayNext;
-    }, [playSong, handlePlayNext]);
+        handlePlayNextRef.current = handlePlayNext;
+    }, [handlePlayNext]);
+
+    const playPrevious: PlayPreviousFunction = useCallback(async () => {
+        if (state.queue.length === 0 || state.currentIndex === -1) return;
+        if (loadingRef.current) {
+            console.log('Already loading previous song, skipping request');
+            return;
+        }
+
+        try {
+            loadingRef.current = true;
+            setIsLoading(true);
+            console.log('Starting to play previous song...');
+
+            if (soundRef.current) {
+                console.log('Cleaning up current sound before playing previous...');
+                await cleanupSound(soundRef.current);
+                setSound(undefined);
+                soundRef.current = undefined;
+                console.log('Current sound cleaned up successfully');
+            }
+
+            let prevIndex = state.currentIndex - 1;
+            
+            if (prevIndex < 0) {
+                if (state.repeatMode === 'all') {
+                    prevIndex = state.queue.length - 1;
+                } else {
+                    dispatch({ type: 'SET_PLAYING', payload: false });
+                    setIsLoading(false);
+                    return;
+                }
+            }
+
+            console.log(`Playing previous song at index: ${prevIndex}`);
+            dispatch({ type: 'SET_CURRENT_INDEX', payload: prevIndex });
+            const prevSong = state.queue[prevIndex];
+            await playSong(prevSong, state.queue);
+        } catch (error) {
+            console.error('Error playing previous song:', error);
+            dispatch({ type: 'SET_PLAYING', payload: false });
+            if (soundRef.current) {
+                await cleanupSound(soundRef.current);
+                setSound(undefined);
+                soundRef.current = undefined;
+            }
+        } finally {
+            loadingRef.current = false;
+            setIsLoading(false);
+        }
+    }, [state.queue, state.currentIndex, state.repeatMode, cleanupSound, playSong, isLoading]);
 
     const playPause = useCallback(async () => {
         if (!sound) return;
 
         try {
             const status = await sound.getStatusAsync();
-            if (!status.isLoaded) return;
-
-            if (status.isPlaying) {
-                await sound.pauseAsync();
-                setIsPlaying(false);
-            } else {
-                await sound.playAsync();
-                setIsPlaying(true);
+            if (status.isLoaded) {
+                if (status.isPlaying) {
+                    await sound.pauseAsync();
+                    dispatch({ type: 'SET_PLAYING', payload: false });
+                } else {
+                    await sound.playAsync();
+                    dispatch({ type: 'SET_PLAYING', payload: true });
+                }
             }
         } catch (error) {
             console.error('Error toggling play/pause:', error);
-            setIsPlaying(false);
         }
     }, [sound]);
 
-    const playPrevious: PlayPreviousFunction = useCallback(async () => {
-        if (currentIndex <= 0) return;
-        const previousSong = queue[currentIndex - 1];
-        await playSong(previousSong, queue);
-    }, [currentIndex, queue, playSong]);
-
     const toggleShuffle = useCallback(() => {
-        setIsShuffled(prev => {
-            const newIsShuffled = !prev;
-            if (newIsShuffled) {
-                setOriginalQueue(queue);
-                const currentSongIndex = queue.findIndex(s => s.track_id === currentSong?.track_id);
-                const remainingSongs = queue.filter((_, i) => i !== currentSongIndex);
-                const shuffledRemaining = shuffleArray(remainingSongs);
-                const newQueue = currentSong ? [currentSong, ...shuffledRemaining] : shuffledRemaining;
-                setQueue(newQueue);
-                setCurrentIndex(currentSong ? 0 : -1);
-            } else {
-                setQueue(originalQueue);
-                const newIndex = originalQueue.findIndex(s => s.track_id === currentSong?.track_id);
-                setCurrentIndex(newIndex);
-            }
-            return newIsShuffled;
-        });
-    }, [queue, currentSong, originalQueue]);
+        dispatch({ type: 'SET_SHUFFLE', payload: !state.isShuffled });
+    }, [state.isShuffled]);
 
     const toggleRepeat = useCallback(() => {
-        setRepeatMode(current => {
-            switch (current) {
-                case 'off': return 'all';
-                case 'all': return 'one';
-                case 'one': return 'off';
-            }
-        });
-    }, []);
+        const modes = ['off', 'all', 'one'] as const;
+        const currentIndex = modes.indexOf(state.repeatMode);
+        const nextIndex = (currentIndex + 1) % modes.length;
+        dispatch({ type: 'SET_REPEAT_MODE', payload: modes[nextIndex] });
+    }, [state.repeatMode]);
+
+    const toggleMaximized = useCallback(() => {
+        dispatch({ type: 'SET_MAXIMIZED', payload: !state.isMaximized });
+    }, [state.isMaximized]);
+
+    const value = useMemo(() => ({
+        currentSong: state.currentSong,
+        isPlaying: state.isPlaying,
+        isShuffled: state.isShuffled,
+        repeatMode: state.repeatMode,
+        progress: state.progress,
+        duration: state.duration,
+        position: state.position,
+        isMaximized: state.isMaximized,
+        playPause,
+        playNext: handlePlayNext,
+        playPrevious,
+        toggleShuffle,
+        toggleRepeat,
+        toggleMaximized,
+        playSong
+    }), [
+        state.currentSong,
+        state.isPlaying,
+        state.isShuffled,
+        state.repeatMode,
+        state.progress,
+        state.duration,
+        state.position,
+        state.isMaximized,
+        playPause,
+        handlePlayNext,
+        playPrevious,
+        toggleShuffle,
+        toggleRepeat,
+        toggleMaximized,
+        playSong
+    ]);
 
     return (
-        <PlayerContext.Provider value={{
-            currentSong,
-            isPlaying,
-            sound,
-            queue,
-            currentIndex,
-            isShuffled,
-            repeatMode,
-            playPause,
-            playSong,
-            playNext: handlePlayNext,
-            playPrevious,
-            toggleShuffle,
-            toggleRepeat,
-        }}>
+        <PlayerContext.Provider value={value}>
             {children}
         </PlayerContext.Provider>
     );
 }
 
-export function usePlayer() {
+export const usePlayer = () => {
     const context = useContext(PlayerContext);
-    if (context === undefined) {
+    if (!context) {
         throw new Error('usePlayer must be used within a PlayerProvider');
     }
     return context;
-} 
+};

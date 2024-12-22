@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { MaterialIcons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { FloatingOptions } from '@/components/FloatingOptions';
+import { MaximizedPlayer } from '@/components/MaximizedPlayer';
 import * as Haptics from 'expo-haptics';
 import { usePlayer } from '@/contexts/PlayerContext';
 
@@ -46,6 +47,7 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         toggleRepeat
     } = usePlayer();
     const [showOptions, setShowOptions] = useState(false);
+    const [showMaximizedPlayer, setShowMaximizedPlayer] = useState(false);
     const [isFavorite, setIsFavorite] = useState(false);
     const backgroundOpacity = useSharedValue(0.8);
 
@@ -74,8 +76,9 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
     const handleBarPress = () => {
         if (showOptions) {
             setShowOptions(false);
-        } else if (onPress) {
-            onPress();
+        } else {
+            console.log('Opening maximized player');
+            setShowMaximizedPlayer(true);
         }
     };
 
@@ -189,6 +192,18 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
 
     return (
         <>
+            <MaximizedPlayer
+                visible={showMaximizedPlayer}
+                onClose={() => {
+                    console.log('Closing maximized player');
+                    setShowMaximizedPlayer(false);
+                }}
+                currentTrack={currentSong ? {
+                    title: currentSong.title,
+                    artist: currentSong.artists.join(', '),
+                    artwork: currentSong.album_art
+                } : null}
+            />
             <FloatingOptions
                 options={options}
                 visible={showOptions}
@@ -252,41 +267,41 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
                                 onPress={handleAddToPlaylist}
                             >
                                 <Ionicons 
-                                    name={"add-circle-outline" as IoniconsName}
+                                    name="add-circle-outline" as IoniconsName
                                     size={20} 
                                     color={colors.greenTertiary}
                                 />
                             </Pressable>
                         </View>
 
-                        <Pressable 
-                            style={styles.pressableContent}
-                            onPress={handleBarPress}
-                            onLongPress={handleLongPress}
-                            delayLongPress={200}
-                        >
-                            <Image 
-                                source={typeof displaySong.album_art === 'string' 
-                                    ? { uri: displaySong.album_art }
-                                    : displaySong.album_art
-                                }
-                                style={styles.albumArt}
-                            />
+                        <View style={styles.mainContent}>
+                            <Pressable 
+                                style={styles.songInfoSection}
+                                onPress={() => setShowMaximizedPlayer(true)}
+                            >
+                                <Image 
+                                    source={typeof displaySong.album_art === 'string' 
+                                        ? { uri: displaySong.album_art }
+                                        : displaySong.album_art
+                                    }
+                                    style={styles.albumArt}
+                                />
 
-                            <View style={styles.songInfo}>
-                                <Text style={styles.title} numberOfLines={1}>
-                                    {displaySong.title}
-                                </Text>
-                                <Text style={styles.artist} numberOfLines={1}>
-                                    {Array.isArray(displaySong.artists) 
-                                        ? displaySong.artists.join(', ')
-                                        : displaySong.artists}
-                                </Text>
-                            </View>
+                                <View style={styles.songInfo}>
+                                    <Text style={styles.title} numberOfLines={1}>
+                                        {displaySong.title}
+                                    </Text>
+                                    <Text style={styles.artist} numberOfLines={1}>
+                                        {Array.isArray(displaySong.artists) 
+                                            ? displaySong.artists.join(', ')
+                                            : displaySong.artists}
+                                    </Text>
+                                </View>
+                            </Pressable>
 
                             <View style={styles.controls}>
                                 <Pressable 
-                                    style={styles.controlButton} 
+                                    style={styles.controlButton}
                                     onPress={handlePrevious}
                                     disabled={!currentSong}
                                 >
@@ -310,7 +325,7 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
                                 </Pressable>
 
                                 <Pressable 
-                                    style={styles.controlButton} 
+                                    style={styles.controlButton}
                                     onPress={handleNext}
                                     disabled={!currentSong}
                                 >
@@ -321,7 +336,7 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
                                     />
                                 </Pressable>
                             </View>
-                        </Pressable>
+                        </View>
                     </Animated.View>
                 </ImageBackground>
             </Animated.View>
@@ -406,5 +421,18 @@ const styles = StyleSheet.create({
         height: 32,
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    mainContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        flex: 1,
+    },
+    songInfoSection: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 16,
     },
 }); 

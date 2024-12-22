@@ -1,13 +1,28 @@
-import React from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Dimensions } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Dimensions, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
 import { Blur } from '@/components/Blur/Blur';
+import { PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
+import Animated, { 
+    useAnimatedGestureHandler,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    runOnJS
+} from 'react-native-reanimated';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
+const SLIDE_THRESHOLD = 50;
 
 interface SongOptionsProps {
     visible: boolean;
     onClose: () => void;
 }
+
+type GestureContext = {
+    startY: number;
+};
 
 const SONG_OPTIONS = {
     QUICK_ACTIONS: {
@@ -56,6 +71,46 @@ const SONG_OPTIONS = {
 };
 
 export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose }) => {
+    const translateY = useSharedValue(0);
+    const scrollRef = useRef<ScrollView>(null);
+    const isScrolledToTop = useSharedValue(true);
+
+    useEffect(() => {
+        if (visible) {
+            translateY.value = 0;
+        }
+    }, [visible]);
+
+    const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const offsetY = event.nativeEvent.contentOffset.y;
+        isScrolledToTop.value = offsetY <= 0;
+    };
+
+    const panGestureEvent = useAnimatedGestureHandler<PanGestureHandlerGestureEvent, GestureContext>({
+        onStart: (_, context) => {
+            context.startY = translateY.value;
+        },
+        onActive: (event, context) => {
+            if (event.translationY > 0 && isScrolledToTop.value) { // Only allow downward drag when at top
+                translateY.value = context.startY + event.translationY;
+            }
+        },
+        onEnd: (event) => {
+            if (event.translationY > SLIDE_THRESHOLD && isScrolledToTop.value) {
+                translateY.value = withSpring(SCREEN_HEIGHT, { damping: 50 });
+                runOnJS(onClose)();
+            } else {
+                translateY.value = withSpring(0);
+            }
+        },
+    });
+
+    const animatedStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ translateY: translateY.value }],
+        };
+    });
+
     return (
         <Modal
             visible={visible}
@@ -66,52 +121,59 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose }) =>
         >
             <View style={styles.container}>
                 <Pressable style={styles.backdrop} onPress={onClose} />
-                <View style={styles.sheet}>
-                    <Blur
-                        style={StyleSheet.absoluteFill}
-                        intensity={20}
-                        backgroundColor="rgba(25, 70, 25, 0.5)"
-                        opacity={0.85}
-                    />
-                    <View style={styles.handle} />
-                    <ScrollView 
-                        style={styles.scrollView}
-                        contentContainerStyle={styles.scrollContent}
-                        showsVerticalScrollIndicator={false}
-                        bounces={false}
-                    >
-                        {Object.values(SONG_OPTIONS).map((category) => (
-                            <View key={category.title} style={styles.categoryContainer}>
-                                <Text style={styles.categoryTitle}>{category.title}</Text>
-                                <View style={styles.optionsContainer}>
-                                    {category.items.map((option) => (
-                                        <Pressable
-                                            key={option.id}
-                                            style={styles.option}
-                                            onPress={() => {
-                                                console.log(option.title);
-                                                onClose();
-                                            }}
-                                        >
-                                            <Ionicons 
-                                                name={option.icon as any} 
-                                                size={24} 
-                                                color={colors.greenTertiary} 
-                                            />
-                                            <Text style={styles.optionText}>{option.title}</Text>
-                                        </Pressable>
-                                    ))}
-                                </View>
-                            </View>
-                        ))}
-                        <Pressable 
-                            style={styles.closeButton}
-                            onPress={onClose}
+                <PanGestureHandler onGestureEvent={panGestureEvent}>
+                    <Animated.View style={[styles.sheet, animatedStyle]}>
+                        <Blur
+                            style={StyleSheet.absoluteFill}
+                            intensity={20}
+                            backgroundColor="rgba(25, 70, 25, 0.5)"
+                            opacity={0.85}
+                        />
+                        <View style={styles.gestureArea}>
+                            <View style={styles.handle} />
+                        </View>
+                        <ScrollView 
+                            ref={scrollRef}
+                            style={styles.scrollView}
+                            contentContainerStyle={styles.scrollContent}
+                            showsVerticalScrollIndicator={false}
+                            bounces={false}
+                            onScroll={handleScroll}
+                            scrollEventThrottle={16}
                         >
-                            <Text style={styles.closeText}>Close</Text>
-                        </Pressable>
-                    </ScrollView>
-                </View>
+                            {Object.values(SONG_OPTIONS).map((category) => (
+                                <View key={category.title} style={styles.categoryContainer}>
+                                    <Text style={styles.categoryTitle}>{category.title}</Text>
+                                    <View style={styles.optionsContainer}>
+                                        {category.items.map((option) => (
+                                            <Pressable
+                                                key={option.id}
+                                                style={styles.option}
+                                                onPress={() => {
+                                                    console.log(option.title);
+                                                    onClose();
+                                                }}
+                                            >
+                                                <Ionicons 
+                                                    name={option.icon as any} 
+                                                    size={24} 
+                                                    color={colors.greenTertiary} 
+                                                />
+                                                <Text style={styles.optionText}>{option.title}</Text>
+                                            </Pressable>
+                                        ))}
+                                    </View>
+                                </View>
+                            ))}
+                            <Pressable 
+                                style={styles.closeButton}
+                                onPress={onClose}
+                            >
+                                <Text style={styles.closeText}>Close</Text>
+                            </Pressable>
+                        </ScrollView>
+                    </Animated.View>
+                </PanGestureHandler>
             </View>
         </Modal>
     );
@@ -131,16 +193,20 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 12,
         overflow: 'hidden',
         backgroundColor: 'rgba(18, 18, 18, 0.98)',
-        maxHeight: '90%',
+        maxHeight: '70%',
+    },
+    gestureArea: {
+        height: 40,
+        width: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'transparent',
     },
     handle: {
         width: 36,
         height: 4,
         backgroundColor: 'rgba(255, 255, 255, 0.3)',
         borderRadius: 2,
-        alignSelf: 'center',
-        marginTop: 8,
-        marginBottom: 4,
     },
     scrollView: {
         maxHeight: '100%',

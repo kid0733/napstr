@@ -1,0 +1,1 @@
+export { MaximizedPlayer } from './MaximizedPlayer/MaximizedPlayer'; 
