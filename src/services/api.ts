@@ -18,6 +18,15 @@ const axiosInstance = axios.create({
     }
 });
 
+// Create a dedicated instance for lyrics requests with text/plain content type
+const lyricsAxiosInstance = axios.create({
+    timeout: 5000,
+    headers: {
+        'Accept': 'text/plain',
+        'Content-Type': 'text/plain'
+    }
+});
+
 // List of possible server addresses to try
 const SERVER_ADDRESSES = [
     'http://localhost:3000',
@@ -25,42 +34,44 @@ const SERVER_ADDRESSES = [
     'http://192.168.0.102:3000',  // Your current IP
 ];
 
+// Cloudflare Worker URL for lyrics
+export const LYRICS_BASE_URL = 'https://napstr-lyrics.napstr.workers.dev';
+
 export const api = {
     initialize: async () => {
         let lastError;
 
-        // Try each server address
+        // Try each server address for main server
         for (const baseUrl of SERVER_ADDRESSES) {
             try {
-                console.log('Trying to connect to:', baseUrl);
+                console.log('Trying to connect to main server:', baseUrl);
                 const response = await axios.get<ServerInfo>(`${baseUrl}/api/server-info`, {
-                    timeout: 3000 // Shorter timeout for discovery
+                    timeout: 3000
                 });
                 
                 const { ip, port } = response.data;
-                console.log('Server found at:', ip);
+                console.log('Main server found at:', ip);
                 
                 // Set the base URL for all future requests
                 BASE_URL = `http://${ip}:${port}/api`;
                 axiosInstance.defaults.baseURL = BASE_URL;
                 
-                console.log('API initialized with URL:', BASE_URL);
+                console.log('Main API initialized with URL:', BASE_URL);
                 isInitialized = true;
-                
-                // Test the connection by fetching a song
-                await api.songs.getAll();
-                
-                return true;
+                break;
             } catch (error) {
-                console.log('Failed to connect to:', baseUrl);
+                console.log('Failed to connect to main server:', baseUrl);
                 lastError = error;
-                continue; // Try next address
+                continue;
             }
         }
 
-        // If we get here, all connection attempts failed
-        console.error('All connection attempts failed. Last error:', lastError);
-        throw lastError;
+        if (!isInitialized) {
+            console.error('Failed to connect to main server. Last error:', lastError);
+            throw lastError;
+        }
+
+        return true;
     },
 
     isReady: () => isInitialized,
@@ -119,6 +130,105 @@ export const api = {
                 throw error;
             }
         }
+    },
+
+    lyrics: {
+        getLyrics: async (trackId: string): Promise<LyricsData> => {
+            console.log('\n=== LYRICS API: Starting Fetch ===');
+            console.log('1. Track ID:', trackId);
+
+            try {
+                const url = `${LYRICS_BASE_URL}/${trackId}`;
+                console.log('2. Making request to:', url);
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'text/plain',
+                        'Content-Type': 'text/plain'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const lrcText = await response.text();
+                if (!lrcText) {
+                    throw new Error('No lyrics data received');
+                }
+
+                console.log('3. Raw LRC data received:', lrcText.substring(0, 100));
+                
+                // Parse the LRC format
+                const rawLines = lrcText.split('\n')
+                    .filter((line: string) => {
+                        const trimmed = line.trim();
+                        return trimmed && 
+                               !trimmed.startsWith('[ti:') && 
+                               !trimmed.startsWith('[ar:') && 
+                               !trimmed.startsWith('[al:') && 
+                               !trimmed.startsWith('[length:');
+                    })
+                    .map((line: string) => {
+                        const timeMatch = line.match(/\[(\d{2}):(\d{2})\.(\d{2})\](.*)/);
+                        if (!timeMatch) return null;
+
+                        const [_, minutes, seconds, centiseconds, words] = timeMatch;
+                        const startTimeMs = (parseInt(minutes) * 60 * 1000) + 
+                                         (parseInt(seconds) * 1000) + 
+                                         (parseInt(centiseconds) * 10);
+
+                        return {
+                            startTimeMs,
+                            words: words.trim()
+                        };
+                    })
+                    .filter((line: any): line is { startTimeMs: number; words: string } => line !== null);
+
+                console.log('4. Parsed lines:', rawLines.length);
+
+                if (rawLines.length === 0) {
+                    throw new Error('No valid lyrics lines found after parsing');
+                }
+
+                // Calculate end times using the next line's start time
+                const lines: LyricsLine[] = rawLines.map((line, index) => ({
+                    startTimeMs: line.startTimeMs,
+                    endTimeMs: index < rawLines.length - 1 
+                        ? rawLines[index + 1].startTimeMs 
+                        : line.startTimeMs + 5000, // Last line gets 5 seconds
+                    words: line.words
+                }));
+
+                const transformedData: LyricsData = {
+                    lines,
+                    isSynchronized: true,
+                    language: 'en'
+                };
+
+                console.log('5. Transformed data:', {
+                    lineCount: transformedData.lines.length,
+                    firstLine: transformedData.lines[0],
+                    lastLine: transformedData.lines[transformedData.lines.length - 1],
+                    isSynchronized: transformedData.isSynchronized,
+                    language: transformedData.language
+                });
+
+                return transformedData;
+
+            } catch (error) {
+                console.error('\n=== LYRICS API: Error ===');
+                console.error('Failed to fetch lyrics:', error);
+                if (error instanceof Error) {
+                    console.error('Error details:', {
+                        message: error.message,
+                        stack: error.stack
+                    });
+                }
+                throw error;
+            }
+        }
     }
 };
 
@@ -132,4 +242,16 @@ export interface Song {
     spotify_url: string;
     explicit: boolean;
     release_date: string;
+}
+
+export interface LyricsLine {
+    startTimeMs: number;
+    endTimeMs: number;
+    words: string;
+}
+
+export interface LyricsData {
+    lines: LyricsLine[];
+    isSynchronized: boolean;
+    language: string;
 } 

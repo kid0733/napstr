@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Image, StyleSheet, Pressable, Dimensions, ImageBackground } from 'react-native';
-import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { FadeIn, useAnimatedStyle, useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import { colors } from '@/constants/tokens';
 import { Ionicons } from '@expo/vector-icons';
 import { MaterialIcons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { FloatingOptions } from '@/components/FloatingOptions';
 import { MaximizedPlayer } from '@/components/MaximizedPlayer';
+import { Blur } from '@/components/Blur/Blur';
 import * as Haptics from 'expo-haptics';
 import { usePlayer } from '@/contexts/PlayerContext';
 
@@ -22,6 +23,7 @@ interface FloatingOption {
     onPress: () => void;
     color: string;
     isActive?: boolean;
+    name: string;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -63,23 +65,20 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
 
     const displaySong = currentSong || DEFAULT_SONG;
 
-    const handleLongPress = async () => {
-        try {
-            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-            setShowOptions(true);
-        } catch (error) {
-            console.warn('Haptics not available:', error);
-            setShowOptions(true);
-        }
-    };
-
     const handleBarPress = () => {
+        console.log('Bar pressed, showOptions:', showOptions, 'showMaximizedPlayer:', showMaximizedPlayer);
+        
         if (showOptions) {
             setShowOptions(false);
-        } else {
-            console.log('Opening maximized player');
-            setShowMaximizedPlayer(true);
+            return;
         }
+        
+        setShowMaximizedPlayer(true);
+    };
+
+    const handleMaximizedPlayerClose = () => {
+        console.log('Closing maximized player');
+        setShowMaximizedPlayer(false);
     };
 
     const handleFavorite = async () => {
@@ -155,38 +154,55 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         }
     };
 
+    const handleSendMessage = async () => {
+        try {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setShowOptions(true);
+        } catch (error) {
+            console.warn('Haptics not available:', error);
+            setShowOptions(true);
+        }
+    };
+
     const options: FloatingOption[] = [
         {
-            icon: 'ban-outline' as IoniconsName,
+            icon: 'person-circle-outline' as IoniconsName,
             onPress: async () => {
                 try {
                     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    console.log('Block');
+                    console.log('Send to Friend 1');
                 } catch (error) {
                     console.warn('Haptics not available:', error);
-                    console.log('Block');
                 }
             },
             color: colors.greenPrimary,
+            name: 'John'
         },
         {
-            icon: 'volume-high-outline' as IoniconsName,
+            icon: 'person-circle-outline' as IoniconsName,
             onPress: async () => {
                 try {
                     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    console.log('Speaker');
+                    console.log('Send to Friend 2');
                 } catch (error) {
                     console.warn('Haptics not available:', error);
-                    console.log('Speaker');
                 }
             },
             color: colors.greenPrimary,
+            name: 'Sarah'
         },
         {
-            icon: 'heart-outline' as IoniconsName,
-            onPress: handleFavorite,
-            color: colors.text,
-            isActive: isFavorite,
+            icon: 'person-circle-outline' as IoniconsName,
+            onPress: async () => {
+                try {
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    console.log('Send to Friend 3');
+                } catch (error) {
+                    console.warn('Haptics not available:', error);
+                }
+            },
+            color: colors.greenPrimary,
+            name: 'Mike'
         },
     ];
 
@@ -194,14 +210,12 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         <>
             <MaximizedPlayer
                 visible={showMaximizedPlayer}
-                onClose={() => {
-                    console.log('Closing maximized player');
-                    setShowMaximizedPlayer(false);
-                }}
+                onClose={handleMaximizedPlayerClose}
                 currentTrack={currentSong ? {
                     title: currentSong.title,
                     artist: currentSong.artists.join(', '),
-                    artwork: currentSong.album_art
+                    artwork: currentSong.album_art,
+                    track_id: currentSong.track_id
                 } : null}
             />
             <FloatingOptions
@@ -214,131 +228,154 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
                 entering={FadeIn.duration(300)}
                 style={[styles.container, animatedBackgroundStyle]}
             >
-                <ImageBackground
-                    source={require('../../../assets/grain_menu.png')}
-                    style={styles.backgroundImage}
-                    imageStyle={styles.backgroundImageStyle}
+                <Pressable 
+                    style={styles.pressableContainer} 
+                    onPress={handleBarPress}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                    <Animated.View style={[styles.content, animatedBackgroundStyle]}>
-                        <View style={styles.additionalControls}>
-                            <Pressable 
-                                style={styles.additionalButton} 
-                                onPress={handleShuffle}
-                            >
-                                <Ionicons 
-                                    name={(isShuffled ? "shuffle" : "shuffle-outline") as IoniconsName}
-                                    size={20} 
-                                    color={isShuffled ? colors.greenPrimary : colors.greenTertiary}
-                                />
-                            </Pressable>
-
-                            <Pressable 
-                                style={styles.additionalButton} 
-                                onPress={handleRepeat}
-                            >
-                                {repeatMode === 'one' ? (
-                                    <MaterialIcons 
-                                        name="repeat-one"
-                                        size={20} 
-                                        color={colors.greenPrimary}
-                                    />
-                                ) : (
-                                    <Ionicons 
-                                        name={repeatMode === 'all' ? "repeat" : "repeat-outline"}
-                                        size={20} 
-                                        color={repeatMode !== 'off' ? colors.greenPrimary : colors.greenTertiary}
-                                    />
-                                )}
-                            </Pressable>
-
-                            <Pressable 
-                                style={styles.additionalButton} 
-                                onPress={handleFavorite}
-                            >
-                                <Ionicons 
-                                    name={(isFavorite ? "heart" : "heart-outline") as IoniconsName}
-                                    size={20} 
-                                    color={isFavorite ? colors.greenPrimary : colors.greenTertiary}
-                                />
-                            </Pressable>
-
-                            <Pressable 
-                                style={styles.additionalButton} 
-                                onPress={handleAddToPlaylist}
-                            >
-                                <Ionicons 
-                                    name="add-circle-outline" as IoniconsName
-                                    size={20} 
-                                    color={colors.greenTertiary}
-                                />
-                            </Pressable>
-                        </View>
-
-                        <View style={styles.mainContent}>
-                            <Pressable 
-                                style={styles.songInfoSection}
-                                onPress={() => setShowMaximizedPlayer(true)}
-                            >
-                                <Image 
-                                    source={typeof displaySong.album_art === 'string' 
-                                        ? { uri: displaySong.album_art }
-                                        : displaySong.album_art
-                                    }
-                                    style={styles.albumArt}
-                                />
-
-                                <View style={styles.songInfo}>
-                                    <Text style={styles.title} numberOfLines={1}>
-                                        {displaySong.title}
-                                    </Text>
-                                    <Text style={styles.artist} numberOfLines={1}>
-                                        {Array.isArray(displaySong.artists) 
-                                            ? displaySong.artists.join(', ')
-                                            : displaySong.artists}
-                                    </Text>
-                                </View>
-                            </Pressable>
-
-                            <View style={styles.controls}>
+                    <ImageBackground
+                        source={require('../../../assets/grain_menu.png')}
+                        style={styles.backgroundImage}
+                        imageStyle={styles.backgroundImageStyle}
+                    >
+                        <Animated.View 
+                            style={[styles.content, animatedBackgroundStyle]}
+                            pointerEvents="box-none"
+                        >
+                            <Blur
+                                style={StyleSheet.absoluteFill}
+                                intensity={showOptions ? 20 : 0}
+                                backgroundColor="rgba(18, 18, 18, 0.98)"
+                                opacity={showOptions ? 0.85 : 0}
+                            />
+                            <View style={styles.additionalControls}>
                                 <Pressable 
-                                    style={styles.controlButton}
-                                    onPress={handlePrevious}
-                                    disabled={!currentSong}
+                                    style={styles.additionalButton} 
+                                    onPress={handleShuffle}
                                 >
                                     <Ionicons 
-                                        name={"play-skip-back" as IoniconsName}
-                                        size={24} 
-                                        color={currentSong ? colors.text : colors.greenTertiary}
+                                        name={(isShuffled ? "shuffle" : "shuffle-outline") as IoniconsName}
+                                        size={20} 
+                                        color={isShuffled ? colors.greenPrimary : colors.greenTertiary}
                                     />
                                 </Pressable>
 
                                 <Pressable 
-                                    style={styles.controlButton} 
-                                    onPress={handlePlayPause}
-                                    disabled={!currentSong}
+                                    style={styles.additionalButton} 
+                                    onPress={handleRepeat}
+                                >
+                                    {repeatMode === 'one' ? (
+                                        <MaterialIcons 
+                                            name="repeat-one"
+                                            size={20} 
+                                            color={colors.greenPrimary}
+                                        />
+                                    ) : (
+                                        <Ionicons 
+                                            name={repeatMode === 'all' ? "repeat" : "repeat-outline"}
+                                            size={20} 
+                                            color={repeatMode !== 'off' ? colors.greenPrimary : colors.greenTertiary}
+                                        />
+                                    )}
+                                </Pressable>
+
+                                <Pressable 
+                                    style={styles.additionalButton} 
+                                    onPress={handleFavorite}
                                 >
                                     <Ionicons 
-                                        name={(isPlaying ? "pause-circle" : "play-circle") as IoniconsName}
-                                        size={32} 
-                                        color={currentSong ? colors.text : colors.greenTertiary}
+                                        name={(isFavorite ? "heart" : "heart-outline") as IoniconsName}
+                                        size={20} 
+                                        color={isFavorite ? colors.greenPrimary : colors.greenTertiary}
                                     />
                                 </Pressable>
 
                                 <Pressable 
-                                    style={styles.controlButton}
-                                    onPress={handleNext}
-                                    disabled={!currentSong}
+                                    style={styles.additionalButton} 
+                                    onPress={handleAddToPlaylist}
                                 >
                                     <Ionicons 
-                                        name={"play-skip-forward" as IoniconsName}
-                                        size={24} 
-                                        color={currentSong ? colors.text : colors.greenTertiary}
+                                        name="add-circle-outline" as IoniconsName
+                                        size={20} 
+                                        color={colors.greenTertiary}
+                                    />
+                                </Pressable>
+
+                                <Pressable 
+                                    style={styles.additionalButton} 
+                                    onPress={handleSendMessage}
+                                >
+                                    <Ionicons 
+                                        name="paper-plane-outline" as IoniconsName
+                                        size={20} 
+                                        color={colors.greenTertiary}
                                     />
                                 </Pressable>
                             </View>
-                        </View>
-                    </Animated.View>
-                </ImageBackground>
+
+                            <View style={styles.mainContent}>
+                                <View style={styles.songInfoSection} pointerEvents="none">
+                                    <Image 
+                                        source={typeof displaySong.album_art === 'string' 
+                                            ? { uri: displaySong.album_art }
+                                            : displaySong.album_art
+                                        }
+                                        style={styles.albumArt}
+                                    />
+
+                                    <View style={styles.songInfo}>
+                                        <Text style={styles.title} numberOfLines={1}>
+                                            {displaySong.title}
+                                        </Text>
+                                        <Text style={styles.artist} numberOfLines={1}>
+                                            {Array.isArray(displaySong.artists) 
+                                                ? displaySong.artists.join(', ')
+                                                : displaySong.artists}
+                                        </Text>
+                                    </View>
+                                </View>
+
+                                <View style={styles.controls}>
+                                    <Pressable 
+                                        style={styles.controlButton}
+                                        onPress={handlePrevious}
+                                        disabled={!currentSong}
+                                    >
+                                        <Ionicons 
+                                            name={"play-skip-back" as IoniconsName}
+                                            size={24} 
+                                            color={currentSong ? colors.text : colors.greenTertiary}
+                                        />
+                                    </Pressable>
+
+                                    <Pressable 
+                                        style={styles.controlButton} 
+                                        onPress={handlePlayPause}
+                                        disabled={!currentSong}
+                                    >
+                                        <Ionicons 
+                                            name={(isPlaying ? "pause-circle" : "play-circle") as IoniconsName}
+                                            size={32} 
+                                            color={currentSong ? colors.text : colors.greenTertiary}
+                                        />
+                                    </Pressable>
+
+                                    <Pressable 
+                                        style={styles.controlButton}
+                                        onPress={handleNext}
+                                        disabled={!currentSong}
+                                    >
+                                        <Ionicons 
+                                            name={"play-skip-forward" as IoniconsName}
+                                            size={24} 
+                                            color={currentSong ? colors.text : colors.greenTertiary}
+                                        />
+                                    </Pressable>
+                                </View>
+                            </View>
+                        </Animated.View>
+                    </ImageBackground>
+                </Pressable>
             </Animated.View>
         </>
     );
@@ -355,7 +392,7 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.1)',
-        zIndex: 1000,
+        zIndex: 999,
     },
     backgroundImage: {
         flex: 1,
@@ -434,5 +471,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         flex: 1,
         marginRight: 16,
+    },
+    pressableContainer: {
+        flex: 1,
     },
 }); 

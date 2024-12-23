@@ -6,6 +6,7 @@ import { api } from '@/services/api'
 import { colors } from '@/constants/tokens'
 import * as Haptics from 'expo-haptics'
 import { PlayerProvider } from '@/contexts/PlayerContext'
+import { LyricsProvider } from '@/contexts/LyricsContext'
 import { SplashOverlay } from '@/components/SplashOverlay/SplashOverlay'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 
@@ -96,7 +97,9 @@ export default function RootLayout() {
             <View style={{ flex: 1, backgroundColor: '#000000' }}>
                 {(isReady && fontsLoaded && !error) ? (
                     <PlayerProvider>
-                        <Stack screenOptions={{ headerShown: false }} />
+                        <LyricsProvider>
+                            <Stack screenOptions={{ headerShown: false }} />
+                        </LyricsProvider>
                     </PlayerProvider>
                 ) : error ? (
                     <View style={styles.errorContainer}>

@@ -16,13 +16,15 @@ export interface PlayerContextType {
     duration: number;
     position: number;
     isMaximized: boolean;
+    queue: Song[];
+    currentIndex: number;
     playPause: () => Promise<void>;
     playNext: () => Promise<void>;
     playPrevious: () => Promise<void>;
     toggleShuffle: () => void;
     toggleRepeat: () => void;
     toggleMaximized: () => void;
-    playSong: (song: Song) => Promise<void>;
+    playSong: (song: Song, queue?: Song[]) => Promise<void>;
 }
 
 const defaultContext: PlayerContextType = {
@@ -34,6 +36,8 @@ const defaultContext: PlayerContextType = {
     duration: 0,
     position: 0,
     isMaximized: false,
+    queue: [],
+    currentIndex: -1,
     playPause: async () => {},
     playNext: async () => {},
     playPrevious: async () => {},
@@ -108,6 +112,8 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const [sound, setSound] = useState<Audio.Sound>();
     const soundRef = useRef<Audio.Sound>();
+    const isPlayingNextRef = useRef(false);
+    const isPlayingPreviousRef = useRef(false);
 
     const [state, dispatch] = useReducer(playerReducer, {
         currentSong: null,
@@ -289,14 +295,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
     const handlePlayNext: PlayNextFunction = useCallback(async () => {
         if (state.queue.length === 0 || state.currentIndex === -1) return;
-        if (loadingRef.current) {
-            console.log('Already loading next song, skipping request');
+        if (isPlayingNextRef.current) {
+            console.log('Already playing next song, skipping request');
             return;
         }
 
         try {
-            loadingRef.current = true;
-            setIsLoading(true);
+            isPlayingNextRef.current = true;
             console.log('Starting to play next song...');
 
             if (soundRef.current) {
@@ -314,7 +319,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                     nextIndex = 0;
                 } else {
                     dispatch({ type: 'SET_PLAYING', payload: false });
-                    setIsLoading(false);
                     return;
                 }
             }
@@ -332,10 +336,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                 soundRef.current = undefined;
             }
         } finally {
-            loadingRef.current = false;
-            setIsLoading(false);
+            isPlayingNextRef.current = false;
         }
-    }, [state.queue, state.currentIndex, state.repeatMode, cleanupSound, playSong, isLoading]);
+    }, [state.queue, state.currentIndex, state.repeatMode, cleanupSound, playSong]);
 
     useEffect(() => {
         handlePlayNextRef.current = handlePlayNext;
@@ -343,14 +346,13 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
     const playPrevious: PlayPreviousFunction = useCallback(async () => {
         if (state.queue.length === 0 || state.currentIndex === -1) return;
-        if (loadingRef.current) {
-            console.log('Already loading previous song, skipping request');
+        if (isPlayingPreviousRef.current) {
+            console.log('Already playing previous song, skipping request');
             return;
         }
 
         try {
-            loadingRef.current = true;
-            setIsLoading(true);
+            isPlayingPreviousRef.current = true;
             console.log('Starting to play previous song...');
 
             if (soundRef.current) {
@@ -368,7 +370,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                     prevIndex = state.queue.length - 1;
                 } else {
                     dispatch({ type: 'SET_PLAYING', payload: false });
-                    setIsLoading(false);
                     return;
                 }
             }
@@ -386,10 +387,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                 soundRef.current = undefined;
             }
         } finally {
-            loadingRef.current = false;
-            setIsLoading(false);
+            isPlayingPreviousRef.current = false;
         }
-    }, [state.queue, state.currentIndex, state.repeatMode, cleanupSound, playSong, isLoading]);
+    }, [state.queue, state.currentIndex, state.repeatMode, cleanupSound, playSong]);
 
     const playPause = useCallback(async () => {
         if (!sound) return;
@@ -434,6 +434,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         duration: state.duration,
         position: state.position,
         isMaximized: state.isMaximized,
+        queue: state.queue,
+        currentIndex: state.currentIndex,
         playPause,
         playNext: handlePlayNext,
         playPrevious,
@@ -450,6 +452,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         state.duration,
         state.position,
         state.isMaximized,
+        state.queue,
+        state.currentIndex,
         playPause,
         handlePlayNext,
         playPrevious,

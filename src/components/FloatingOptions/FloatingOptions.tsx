@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Pressable, Animated, Dimensions } from 'react-native';
+import { View, StyleSheet, Pressable, Animated, Dimensions, Text, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
 import { Blur } from '@/components/Blur/Blur';
@@ -9,6 +9,7 @@ interface FloatingOption {
   onPress: () => void;
   color?: string;
   isActive?: boolean;
+  name: string;
 }
 
 interface FloatingOptionsProps {
@@ -18,7 +19,10 @@ interface FloatingOptionsProps {
   position?: 'top' | 'bottom';
 }
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
+const CONTAINER_WIDTH = SCREEN_WIDTH * 0.9;
+const HORIZONTAL_MARGIN = (SCREEN_WIDTH - CONTAINER_WIDTH) / 2;
 const INACTIVITY_TIMEOUT = 4000; // 4 seconds
 
 export const FloatingOptions: React.FC<FloatingOptionsProps> = ({
@@ -87,14 +91,24 @@ export const FloatingOptions: React.FC<FloatingOptionsProps> = ({
             transform: [{
               translateY: animation.interpolate({
                 inputRange: [0, 1],
-                outputRange: [position === 'top' ? 20 : -20, 0],
+                outputRange: [90, 0],
               })
             }]
           }
         ]}
       >
-        <View 
-          style={styles.optionsContainer}
+        <View style={styles.backgroundContainer}>
+          <Blur
+            style={StyleSheet.absoluteFill}
+            intensity={20}
+            backgroundColor="rgba(25, 70, 25, 0.5)"
+            opacity={0.85}
+          />
+        </View>
+        <ScrollView 
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
           onTouchStart={() => {
             startInactivityTimer();
           }}
@@ -107,22 +121,19 @@ export const FloatingOptions: React.FC<FloatingOptionsProps> = ({
                 option.onPress();
               }}
             >
-              <Blur
-                style={styles.blurContainer}
-                intensity={20}
-                backgroundColor="rgba(25, 70, 25, 0.5)"
-                opacity={0.85}
-              />
-              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', zIndex: 2 }}>
-                <Ionicons
-                  name={option.isActive ? option.icon.replace('-outline', '') as keyof typeof Ionicons.glyphMap : option.icon}
-                  size={20}
-                  color={option.color || colors.text}
-                />
+              <View style={styles.optionContent}>
+                <View style={styles.iconContainer}>
+                  <Ionicons
+                    name={option.isActive ? option.icon.replace('-outline', '') as keyof typeof Ionicons.glyphMap : option.icon}
+                    size={24}
+                    color={option.color || colors.text}
+                  />
+                </View>
+                <Text style={styles.nameText}>{option.name}</Text>
               </View>
             </Pressable>
           ))}
-        </View>
+        </ScrollView>
       </Animated.View>
     </>
   );
@@ -134,45 +145,60 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    zIndex: 1000,
+    backgroundColor: 'transparent',
+    zIndex: 998,
   },
   container: {
     position: 'absolute',
-    left: 16,
-    right: 16,
+    left: HORIZONTAL_MARGIN,
+    width: CONTAINER_WIDTH,
     zIndex: 1001,
+    paddingVertical: 16,
+  },
+  backgroundContainer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    overflow: 'hidden',
+    borderRadius: 12,
   },
   topPosition: {
-    bottom: 140,
+    bottom: 120,
   },
   bottomPosition: {
     top: '100%',
     marginTop: 8,
   },
-  optionsContainer: {
+  scrollContent: {
+    paddingHorizontal: 20,
+    gap: 24,
     flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 0,
+    alignItems: 'center',
   },
   optionButton: {
-    width: '33%',
-    height: 52,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    overflow: 'hidden',
+    alignItems: 'center',
     position: 'relative',
+    width: 60,
   },
-  blurContainer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  optionContent: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  iconContainer: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  nameText: {
+    color: colors.greenTertiary,
+    fontSize: 12,
+    fontFamily: 'dosis_medium',
+    textAlign: 'center',
   },
 }); 

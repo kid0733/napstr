@@ -1,5 +1,5 @@
 import React, { memo, useState, useCallback, useEffect } from 'react';
-import { View, Text, Image, StyleSheet, Dimensions, Pressable } from 'react-native';
+import { View, Text, Image, StyleSheet, Dimensions, Pressable, ScrollView } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
 import { Blur } from '@/components/Blur/Blur';
@@ -13,9 +13,16 @@ import Animated, {
     withSpring,
     runOnJS,
     FadeIn,
-    WithSpringConfig
+    WithSpringConfig,
+    Easing,
+    interpolate,
+    withTiming
 } from 'react-native-reanimated';
 import { SongOptions } from '@/components/SongOptions/SongOptions';
+import { Song, LyricsData, LyricsLine } from '@/services/api';
+import { Lyrics } from '@/components/Lyrics/Lyrics';
+import { useLyrics } from '@/contexts/LyricsContext';
+import { LYRICS_BASE_URL } from '@/services/api';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -24,6 +31,7 @@ interface TrackInfo {
     title: string;
     artist: string;
     artwork: string;
+    track_id: string;
 }
 
 interface MaximizedPlayerProps {
@@ -127,6 +135,58 @@ interface GestureContext extends Record<string, unknown> {
     startY: number;
 }
 
+const QueueItem = memo(function QueueItem({ 
+    title, 
+    artist, 
+    artwork, 
+    isPlaying,
+    onPress
+}: { 
+    title: string; 
+    artist: string; 
+    artwork: string;
+    isPlaying: boolean;
+    onPress: () => void;
+}) {
+    return (
+        <>
+            <Pressable 
+                style={styles.queueItem}
+                onPress={onPress}
+            >
+                <Image 
+                    source={{ uri: artwork }} 
+                    style={styles.queueItemArtwork}
+                />
+                <View style={styles.queueItemInfo}>
+                    <Text 
+                        style={[
+                            styles.queueItemTitle,
+                            isPlaying && styles.queueItemTitleActive
+                        ]} 
+                        numberOfLines={1}
+                    >
+                        {title}
+                    </Text>
+                    <Text style={styles.queueItemArtist} numberOfLines={1}>
+                        {artist}
+                    </Text>
+                </View>
+                {isPlaying && (
+                    <View style={styles.queueItemPlayingIndicator}>
+                        <Ionicons 
+                            name="musical-notes" 
+                            size={16} 
+                            color={colors.greenPrimary}
+                        />
+                    </View>
+                )}
+            </Pressable>
+            <View style={styles.queueItemDivider} />
+        </>
+    );
+});
+
 export const MaximizedPlayer = memo(function MaximizedPlayer({
     visible,
     onClose,
@@ -143,12 +203,20 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         toggleRepeat,
         progress = 0,
         duration = 0,
-        position = 0
+        position = 0,
+        queue = [],
+        currentIndex,
+        playSong
     } = usePlayer();
 
     const [showOptions, setShowOptions] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
     const translateY = useSharedValue(SCREEN_HEIGHT);
+
+    const { lyrics, fetchLyrics, isLoading } = useLyrics();
+
+    const [showLyrics, setShowLyrics] = useState(false);
+    const flipAnimation = useSharedValue(0);
 
     useEffect(() => {
         if (visible) {
@@ -160,6 +228,47 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             setIsClosing(false);
         }
     }, [visible]);
+
+    const handleLyricsPress = useCallback(() => {
+        console.log('\n=== MaximizedPlayer: Lyrics Button Press ===');
+        console.log('Current Track:', currentTrack);
+        console.log('Current Lyrics State:', lyrics);
+        console.log('Is Loading:', isLoading);
+        console.log('Show Lyrics:', showLyrics);
+        console.log('Flip Animation Value:', flipAnimation.value);
+        
+        if (!lyrics && currentTrack?.track_id && !isLoading) {
+            console.log('Fetching lyrics for track:', currentTrack.track_id);
+            fetchLyrics(currentTrack.track_id);
+        }
+
+        if (lyrics || !showLyrics) {
+            console.log('Triggering flip animation');
+            const toValue = showLyrics ? 0 : 1;
+            flipAnimation.value = withTiming(toValue, {
+                duration: 800,
+                easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            }, (finished) => {
+                if (finished) {
+                    console.log('Flip animation finished, setting showLyrics to:', !showLyrics);
+                    runOnJS(setShowLyrics)(!showLyrics);
+                }
+            });
+        }
+    }, [currentTrack, lyrics, isLoading, showLyrics, flipAnimation]);
+
+    useEffect(() => {
+        console.log('\n=== MaximizedPlayer: Lyrics Effect ===');
+        console.log('Show Lyrics:', showLyrics);
+        console.log('Current Track:', currentTrack);
+        console.log('Current Lyrics:', lyrics);
+        console.log('Is Loading:', isLoading);
+        
+        if (showLyrics && !lyrics && currentTrack?.track_id && !isLoading) {
+            console.log('Auto-fetching lyrics for current track:', currentTrack.track_id);
+            fetchLyrics(currentTrack.track_id);
+        }
+    }, [showLyrics, lyrics, currentTrack, isLoading, fetchLyrics]);
 
     const handleClose = useCallback(() => {
         setIsClosing(true);
@@ -198,6 +307,14 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         }
     }, [playPrevious]);
 
+    const handleQueueItemPress = useCallback(async (song: Song) => {
+        try {
+            await playSong(song);
+        } catch (error) {
+            console.error('Error playing song from queue:', error);
+        }
+    }, [playSong]);
+
     const panGestureEvent = useAnimatedGestureHandler<PanGestureHandlerGestureEvent, GestureContext>({
         onStart: (_, context) => {
             context.startY = translateY.value;
@@ -227,22 +344,51 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         transform: [{ translateY: translateY.value }],
     }));
 
+    const frontAnimatedStyle = useAnimatedStyle(() => {
+        const rotateY = interpolate(
+            flipAnimation.value,
+            [0, 1],
+            [0, 180]
+        );
+        return {
+            transform: [{ rotateY: `${rotateY}deg` }],
+            backfaceVisibility: 'hidden',
+        };
+    });
+
+    const backAnimatedStyle = useAnimatedStyle(() => {
+        const rotateY = interpolate(
+            flipAnimation.value,
+            [0, 1],
+            [180, 360]
+        );
+        return {
+            transform: [{ rotateY: `${rotateY}deg` }],
+            backfaceVisibility: 'hidden',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+        };
+    });
+
     if (!visible || !currentTrack || isClosing) {
         return null;
     }
 
     return (
-        <View style={styles.container}>
-            <Blur
-                style={StyleSheet.absoluteFill}
-                intensity={20}
-                backgroundColor="rgba(18, 18, 18, 0.98)"
-            />
-            <PanGestureHandler onGestureEvent={panGestureEvent}>
-                <Animated.View 
-                    style={[styles.content, animatedStyle]}
-                    entering={FadeIn.duration(300)}
-                >
+        <PanGestureHandler onGestureEvent={panGestureEvent}>
+            <Animated.View 
+                style={[styles.container, animatedStyle]}
+                entering={FadeIn.duration(300)}
+            >
+                <Blur
+                    style={StyleSheet.absoluteFill}
+                    intensity={20}
+                    backgroundColor="rgba(18, 18, 18, 0.98)"
+                />
+                <View style={styles.content}>
                     <View style={styles.header}>
                         <Pressable onPress={handleClose} style={styles.closeButton}>
                             <Ionicons name="chevron-down" size={28} color={colors.greenTertiary} />
@@ -255,68 +401,117 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                         </Pressable>
                     </View>
 
-                    <View style={styles.artworkContainer}>
-                        <Image
-                            source={{ uri: currentTrack.artwork }}
-                            style={styles.artwork}
-                            resizeMode="cover"
+                    <ScrollView style={styles.mainScroll} showsVerticalScrollIndicator={false}>
+                        <View style={styles.artworkContainer}>
+                            <Animated.View style={[styles.artworkWrapper, frontAnimatedStyle]}>
+                                {!showLyrics && (
+                                    <Image 
+                                        source={{ uri: currentTrack.artwork }} 
+                                        style={styles.artwork}
+                                        resizeMode="cover"
+                                    />
+                                )}
+                            </Animated.View>
+                            <Animated.View style={[styles.artworkWrapper, backAnimatedStyle]}>
+                                {showLyrics && (
+                                    <View style={styles.lyricsWrapper}>
+                                        <Text style={styles.lyricsTitle}>Lyrics</Text>
+                                        <ScrollView 
+                                            style={styles.lyricsScroll}
+                                            showsVerticalScrollIndicator={false}
+                                        >
+                                            <View style={styles.lyricsContent}>
+                                                {lyrics?.lines ? (
+                                                    lyrics.lines.map((line, index) => (
+                                                        <Text key={index} style={styles.lyricLine}>
+                                                            {line.words}
+                                                        </Text>
+                                                    ))
+                                                ) : (
+                                                    <Text style={styles.lyricLine}>No lyrics available</Text>
+                                                )}
+                                            </View>
+                                        </ScrollView>
+                                    </View>
+                                )}
+                            </Animated.View>
+                        </View>
+
+                        <SongInfo track={currentTrack} />
+
+                        <View style={styles.progressContainer}>
+                            <ProgressBar
+                                progress={progress}
+                                currentTime={position}
+                                duration={duration}
+                            />
+                        </View>
+
+                        <Controls 
+                            isPlaying={isPlaying}
+                            onPlayPause={handlePlayPause}
+                            onNext={handleNext}
+                            onPrevious={handlePrevious}
+                            isShuffled={isShuffled}
+                            repeatMode={repeatMode}
+                            onToggleShuffle={toggleShuffle}
+                            onToggleRepeat={toggleRepeat}
                         />
-                    </View>
 
-                    <SongInfo track={currentTrack} />
+                        <View style={styles.additionalControls}>
+                            <Pressable style={styles.controlButton}>
+                                <Ionicons name="heart-outline" size={24} color={colors.greenTertiary} />
+                            </Pressable>
+                            <Pressable style={styles.controlButton}>
+                                <Ionicons name="share-outline" size={24} color={colors.greenTertiary} />
+                            </Pressable>
+                            <Pressable style={styles.controlButton} onPress={handleLyricsPress}>
+                                <Ionicons 
+                                    name="text-outline" 
+                                    size={24} 
+                                    color={showLyrics ? colors.greenPrimary : colors.greenTertiary} 
+                                />
+                            </Pressable>
+                        </View>
 
-                    <View style={styles.progressContainer}>
-                        <ProgressBar
-                            progress={progress}
-                            currentTime={position}
-                            duration={duration}
-                        />
-                    </View>
+                        <View style={styles.queueContainer}>
+                            <Text style={styles.queueTitle}>Next in Queue</Text>
+                            {queue.slice(currentIndex + 1, currentIndex + 11).map((song, index) => (
+                                <QueueItem
+                                    key={song.track_id}
+                                    title={song.title}
+                                    artist={song.artists.join(', ')}
+                                    artwork={song.album_art}
+                                    isPlaying={index === 0 && isPlaying}
+                                    onPress={() => handleQueueItemPress(song)}
+                                />
+                            ))}
+                        </View>
+                    </ScrollView>
+                </View>
 
-                    <Controls 
-                        isPlaying={isPlaying}
-                        onPlayPause={handlePlayPause}
-                        onNext={handleNext}
-                        onPrevious={handlePrevious}
-                        isShuffled={isShuffled}
-                        repeatMode={repeatMode}
-                        onToggleShuffle={toggleShuffle}
-                        onToggleRepeat={toggleRepeat}
-                    />
-
-                    <View style={styles.additionalControls}>
-                        <Pressable style={styles.controlButton}>
-                            <Ionicons name="heart-outline" size={24} color={colors.greenTertiary} />
-                        </Pressable>
-                        <Pressable style={styles.controlButton}>
-                            <Ionicons name="share-outline" size={24} color={colors.greenTertiary} />
-                        </Pressable>
-                        <Pressable style={styles.controlButton}>
-                            <Ionicons name="list-outline" size={24} color={colors.greenTertiary} />
-                        </Pressable>
-                    </View>
-                </Animated.View>
-            </PanGestureHandler>
-
-            <SongOptions
-                visible={showOptions}
-                onClose={() => setShowOptions(false)}
-            />
-        </View>
+                <SongOptions
+                    visible={showOptions}
+                    onClose={() => setShowOptions(false)}
+                />
+            </Animated.View>
+        </PanGestureHandler>
     );
 });
 
 const styles = StyleSheet.create({
     container: {
-        ...StyleSheet.absoluteFillObject,
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 9999,
-        elevation: 9999,
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'transparent',
+        zIndex: 1000,
+        elevation: 1000,
     },
     content: {
-        width: SCREEN_WIDTH,
-        height: SCREEN_HEIGHT,
+        flex: 1,
         backgroundColor: 'transparent',
         paddingTop: 50,
     },
@@ -339,28 +534,22 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         fontSize: 16,
-        color: colors.greenTertiary,
+        color: colors.text,
         fontWeight: '600',
     },
     artworkContainer: {
-        width: SCREEN_WIDTH - 80,
-        height: SCREEN_WIDTH - 80,
-        alignSelf: 'center',
+        width: SCREEN_WIDTH - 32,
+        height: SCREEN_WIDTH - 32,
+        marginHorizontal: 16,
+        marginTop: 32,
         borderRadius: 8,
-        overflow: 'hidden',
-        marginVertical: 20,
-        shadowColor: '#000',
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
-        shadowOpacity: 0.3,
-        shadowRadius: 4.65,
-        elevation: 8,
+        position: 'relative',
+        backgroundColor: colors.background,
     },
     artwork: {
         width: '100%',
         height: '100%',
+        borderRadius: 8,
     },
     trackInfoContainer: {
         alignItems: 'center',
@@ -369,13 +558,13 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 24,
-        color: colors.greenTertiary,
+        color: colors.text,
         fontWeight: '600',
         marginBottom: 8,
     },
     artist: {
         fontSize: 18,
-        color: colors.greenTertiary,
+        color: colors.text,
         opacity: 0.8,
     },
     progressContainer: {
@@ -396,7 +585,7 @@ const styles = StyleSheet.create({
         width: 64,
         height: 64,
         borderRadius: 32,
-        backgroundColor: colors.greenTertiary,
+        backgroundColor: colors.text,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -405,5 +594,101 @@ const styles = StyleSheet.create({
         justifyContent: 'space-around',
         paddingHorizontal: 60,
         marginTop: 30,
+    },
+    mainScroll: {
+        flex: 1,
+    },
+    queueContainer: {
+        paddingHorizontal: 20,
+        paddingTop: 30,
+        paddingBottom: 100,
+    },
+    queueTitle: {
+        fontSize: 18,
+        color: colors.text,
+        fontWeight: '600',
+        marginBottom: 16,
+    },
+    queueItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        gap: 12,
+    },
+    queueItemArtwork: {
+        width: 40,
+        height: 40,
+        borderRadius: 4,
+    },
+    queueItemInfo: {
+        flex: 1,
+    },
+    queueItemTitle: {
+        fontSize: 14,
+        color: colors.text,
+        fontWeight: '500',
+    },
+    queueItemTitleActive: {
+        color: colors.text,
+    },
+    queueItemArtist: {
+        fontSize: 12,
+        color: colors.text,
+        opacity: 0.8,
+    },
+    queueItemPlayingIndicator: {
+        width: 24,
+        height: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    queueItemDivider: {
+        height: StyleSheet.hairlineWidth,
+        backgroundColor: colors.text,
+        opacity: 0.1,
+        marginLeft: 52, // width of artwork (40) + gap (12)
+    },
+    artworkWrapper: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 8,
+        overflow: 'hidden',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: colors.background,
+    },
+    lyricsWrapper: {
+        flex: 1,
+        backgroundColor: colors.background,
+        borderRadius: 8,
+        padding: 16,
+        width: '100%',
+        height: '100%',
+        justifyContent: 'flex-start',
+        alignItems: 'stretch',
+    },
+    lyricsTitle: {
+        fontSize: 24,
+        color: colors.text,
+        fontWeight: '600',
+        textAlign: 'center',
+        marginBottom: 24,
+    },
+    lyricsScroll: {
+        flex: 1,
+    },
+    lyricsContent: {
+        paddingBottom: 24,
+        paddingHorizontal: 16,
+    },
+    lyricLine: {
+        fontSize: 18,
+        color: colors.text,
+        marginVertical: 12,
+        textAlign: 'center',
+        lineHeight: 24,
     },
 });

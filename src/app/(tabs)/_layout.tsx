@@ -96,6 +96,6 @@ const layoutStyles = StyleSheet.create({
         flex: 1,
         marginTop: Dimensions.get('window').height * 0.065,
         paddingHorizontal: 0,
-        paddingBottom: 90,
+        paddingBottom:10
     },
 });

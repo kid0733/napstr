@@ -74,12 +74,26 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose }) =>
     const translateY = useSharedValue(0);
     const scrollRef = useRef<ScrollView>(null);
     const isScrolledToTop = useSharedValue(true);
+    const touchStartY = useRef(0);
 
     useEffect(() => {
         if (visible) {
             translateY.value = 0;
         }
     }, [visible]);
+
+    const handleTouchStart = (event: any) => {
+        touchStartY.current = event.nativeEvent.pageY;
+    };
+
+    const handleTouchMove = (event: any) => {
+        const currentY = event.nativeEvent.pageY;
+        const deltaY = currentY - touchStartY.current;
+
+        if (isScrolledToTop.value && deltaY > 0) {
+            onClose();
+        }
+    };
 
     const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const offsetY = event.nativeEvent.contentOffset.y;
@@ -91,7 +105,7 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose }) =>
             context.startY = translateY.value;
         },
         onActive: (event, context) => {
-            if (event.translationY > 0 && isScrolledToTop.value) { // Only allow downward drag when at top
+            if (isScrolledToTop.value) {
                 translateY.value = context.startY + event.translationY;
             }
         },
@@ -111,6 +125,13 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose }) =>
         };
     });
 
+    const animatedBackdropStyle = useAnimatedStyle(() => {
+        const opacity = translateY.value > 0 ? 0 : 0.8;
+        return {
+            backgroundColor: `rgba(0, 0, 0, ${opacity})`,
+        };
+    });
+
     return (
         <Modal
             visible={visible}
@@ -120,14 +141,16 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose }) =>
             statusBarTranslucent
         >
             <View style={styles.container}>
-                <Pressable style={styles.backdrop} onPress={onClose} />
+                <Animated.View style={[styles.backdrop, animatedBackdropStyle]}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+                </Animated.View>
                 <PanGestureHandler onGestureEvent={panGestureEvent}>
                     <Animated.View style={[styles.sheet, animatedStyle]}>
                         <Blur
                             style={StyleSheet.absoluteFill}
                             intensity={20}
-                            backgroundColor="rgba(25, 70, 25, 0.5)"
-                            opacity={0.85}
+                            backgroundColor="rgba(25, 70, 25, 0.1)"
+                            opacity={0.1}
                         />
                         <View style={styles.gestureArea}>
                             <View style={styles.handle} />
@@ -140,6 +163,8 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose }) =>
                             bounces={false}
                             onScroll={handleScroll}
                             scrollEventThrottle={16}
+                            onTouchStart={handleTouchStart}
+                            onTouchMove={handleTouchMove}
                         >
                             {Object.values(SONG_OPTIONS).map((category) => (
                                 <View key={category.title} style={styles.categoryContainer}>
@@ -186,7 +211,6 @@ const styles = StyleSheet.create({
     },
     backdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
     },
     sheet: {
         borderTopLeftRadius: 12,
