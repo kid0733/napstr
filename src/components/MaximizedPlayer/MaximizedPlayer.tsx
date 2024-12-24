@@ -297,8 +297,8 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
 
         const toValue = showLyrics ? 0 : 1;
         flipAnimation.value = withTiming(toValue, {
-            duration: 800,
-            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+            duration: 600,
+            easing: Easing.bezier(0.455, 0.03, 0.515, 0.955),
         }, (finished) => {
             if (finished) {
                 console.log('Flip animation finished, setting showLyrics to:', !showLyrics);
@@ -358,9 +358,8 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             context.startY = translateY.value;
         },
         onActive: (event, context) => {
-            if (event.translationY > 0) {
-                translateY.value = context.startY + event.translationY;
-            }
+            // Allow scrolling in both directions when not at the top
+            translateY.value = context.startY + Math.max(0, event.translationY);
         },
         onEnd: (event) => {
             if (event.translationY > SCREEN_HEIGHT * 0.2) {
@@ -389,8 +388,17 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             [0, 180]
         );
         return {
-            transform: [{ rotateY: `${rotateY}deg` }],
+            transform: [
+                { perspective: 1000 },
+                { rotateY: `${rotateY}deg` }
+            ],
             backfaceVisibility: 'hidden',
+            zIndex: flipAnimation.value >= 0.5 ? 0 : 1,
+            opacity: interpolate(
+                flipAnimation.value,
+                [0, 0.5, 0.5, 1],
+                [1, 0, 0, 0]
+            ),
         };
     });
 
@@ -401,13 +409,22 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             [180, 360]
         );
         return {
-            transform: [{ rotateY: `${rotateY}deg` }],
+            transform: [
+                { perspective: 1000 },
+                { rotateY: `${rotateY}deg` }
+            ],
             backfaceVisibility: 'hidden',
             position: 'absolute',
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
+            zIndex: flipAnimation.value >= 0.5 ? 1 : 0,
+            opacity: interpolate(
+                flipAnimation.value,
+                [0, 0.5, 0.5, 1],
+                [0, 0, 0, 1]
+            ),
         };
     });
 
@@ -452,7 +469,7 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                 <Blur
                     style={StyleSheet.absoluteFill}
                     intensity={20}
-                    backgroundColor="rgba(18, 18, 18, 0.98)"
+                    backgroundColor="rgba(18, 18, 18, 0.0)"
                 />
                 <View style={styles.content}>
                     <View style={styles.header}>
@@ -467,7 +484,12 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                         </Pressable>
                     </View>
 
-                    <ScrollView style={styles.mainScroll} showsVerticalScrollIndicator={false}>
+                    <ScrollView 
+                        style={styles.mainScroll} 
+                        showsVerticalScrollIndicator={false}
+                        nestedScrollEnabled={true}
+                        scrollEventThrottle={16}
+                    >
                         <View style={styles.artworkContainer}>
                             <Animated.View style={[styles.artworkWrapper, frontAnimatedStyle]}>
                                 {!showLyrics && (
@@ -581,38 +603,39 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         backgroundColor: 'transparent',
-        paddingTop: 50,
+        paddingTop: SCREEN_HEIGHT * 0.06,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        marginBottom: 20,
+        paddingHorizontal: '5%',
+        marginBottom: '3%',
     },
     closeButton: {
-        padding: 8,
+        padding: '2%',
     },
     menuButton: {
-        padding: 8,
+        padding: '2%',
     },
     headerTextContainer: {
         flex: 1,
         alignItems: 'center',
     },
     headerTitle: {
-        fontSize: 16,
+        fontSize: SCREEN_WIDTH * 0.04,
         color: colors.text,
         fontWeight: '600',
     },
     artworkContainer: {
-        width: SCREEN_WIDTH - 32,
-        height: SCREEN_WIDTH - 32,
-        marginHorizontal: 16,
-        marginTop: 32,
+        width: '85%',
+        aspectRatio: 1,
+        marginHorizontal: '7.5%',
+        marginTop: '8%',
         borderRadius: 8,
         position: 'relative',
-        backgroundColor: colors.background,
+        backgroundColor: 'transparent',
+        transform: [{ perspective: 1000 }],
     },
     artwork: {
         width: '100%',
@@ -621,38 +644,38 @@ const styles = StyleSheet.create({
     },
     trackInfoContainer: {
         alignItems: 'center',
-        paddingHorizontal: 20,
-        marginTop: 20,
+        paddingHorizontal: '5%',
+        marginTop: '5%',
     },
     title: {
-        fontSize: 24,
+        fontSize: SCREEN_WIDTH * 0.06,
         color: colors.text,
         fontWeight: '600',
-        marginBottom: 8,
+        marginBottom: '2%',
     },
     artist: {
-        fontSize: 18,
+        fontSize: SCREEN_WIDTH * 0.045,
         color: colors.text,
         opacity: 0.8,
     },
     progressContainer: {
-        paddingHorizontal: 20,
-        marginTop: 30,
+        paddingHorizontal: '5%',
+        marginTop: '7%',
     },
     controls: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 30,
-        marginTop: 30,
+        paddingHorizontal: '8%',
+        marginTop: '7%',
     },
     controlButton: {
-        padding: 10,
+        padding: '2.5%',
     },
     playButton: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
+        width: SCREEN_WIDTH * 0.16,
+        aspectRatio: 1,
+        borderRadius: SCREEN_WIDTH * 0.08,
         backgroundColor: colors.text,
         justifyContent: 'center',
         alignItems: 'center',
@@ -660,39 +683,39 @@ const styles = StyleSheet.create({
     additionalControls: {
         flexDirection: 'row',
         justifyContent: 'space-around',
-        paddingHorizontal: 60,
-        marginTop: 30,
+        paddingHorizontal: '15%',
+        marginTop: '7%',
     },
     mainScroll: {
         flex: 1,
     },
     queueContainer: {
-        paddingHorizontal: 20,
-        paddingTop: 30,
-        paddingBottom: 100,
+        paddingHorizontal: '5%',
+        paddingTop: '7%',
+        paddingBottom: SCREEN_HEIGHT * 0.12,
     },
     queueTitle: {
-        fontSize: 18,
+        fontSize: SCREEN_WIDTH * 0.045,
         color: colors.text,
         fontWeight: '600',
-        marginBottom: 16,
+        marginBottom: '4%',
     },
     queueItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 12,
-        gap: 12,
+        paddingVertical: '3%',
+        gap: SCREEN_WIDTH * 0.03,
     },
     queueItemArtwork: {
-        width: 40,
-        height: 40,
+        width: SCREEN_WIDTH * 0.1,
+        aspectRatio: 1,
         borderRadius: 4,
     },
     queueItemInfo: {
         flex: 1,
     },
     queueItemTitle: {
-        fontSize: 14,
+        fontSize: SCREEN_WIDTH * 0.035,
         color: colors.text,
         fontWeight: '500',
     },
@@ -700,13 +723,13 @@ const styles = StyleSheet.create({
         color: colors.text,
     },
     queueItemArtist: {
-        fontSize: 12,
+        fontSize: SCREEN_WIDTH * 0.03,
         color: colors.text,
         opacity: 0.8,
     },
     queueItemPlayingIndicator: {
-        width: 24,
-        height: 24,
+        width: SCREEN_WIDTH * 0.06,
+        aspectRatio: 1,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -714,7 +737,7 @@ const styles = StyleSheet.create({
         height: StyleSheet.hairlineWidth,
         backgroundColor: colors.text,
         opacity: 0.1,
-        marginLeft: 52, // width of artwork (40) + gap (12)
+        marginLeft: '13%',
     },
     artworkWrapper: {
         width: '100%',
@@ -726,7 +749,13 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: colors.background,
+        backgroundColor: 'transparent',
+        shadowColor: 'transparent',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
+        transform: [{ perspective: 1000 }],
     },
     lyricsWrapper: {
         flex: 1,
@@ -743,7 +772,7 @@ const styles = StyleSheet.create({
     },
     lyricsContainer: {
         flex: 1,
-        padding: 16,
+        padding: '4%',
         zIndex: 2,
         justifyContent: 'center',
     },
@@ -751,15 +780,15 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     lyricsContent: {
-        paddingVertical: (SCREEN_WIDTH - 32) / 4, // Half of artwork container height for padding
-        paddingHorizontal: 16,
+        paddingVertical: '25%',
+        paddingHorizontal: '4%',
     },
     lyricLine: {
-        fontSize: 16,
+        fontSize: SCREEN_WIDTH * 0.04,
         color: colors.greenTertiary,
-        marginVertical: 12,
+        marginVertical: '3%',
         textAlign: 'center',
-        lineHeight: 24,
+        lineHeight: SCREEN_WIDTH * 0.06,
         opacity: 0.3,
         textShadowColor: 'rgba(0, 0, 0, 0.75)',
         textShadowOffset: { width: 0, height: 1 },
@@ -768,16 +797,16 @@ const styles = StyleSheet.create({
     lyricLineActive: {
         color: colors.greenPrimary,
         opacity: 1,
-        fontSize: 20,
+        fontSize: SCREEN_WIDTH * 0.05,
         fontWeight: '600',
         transform: [{ scale: 1.1 }],
     },
     lyricLinePrevious: {
         opacity: 0.5,
-        fontSize: 18,
+        fontSize: SCREEN_WIDTH * 0.045,
     },
     lyricLineNext: {
         opacity: 0.5,
-        fontSize: 18,
+        fontSize: SCREEN_WIDTH * 0.045,
     },
 });

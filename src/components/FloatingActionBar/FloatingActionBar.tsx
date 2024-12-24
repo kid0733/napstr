@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, ViewStyle, StyleProp, ImageBackground, Pressable, Dimensions } from 'react-native';
+import { StyleSheet, View, ViewStyle, StyleProp, ImageBackground, Pressable, Dimensions, Platform } from 'react-native';
 import Animated, { 
   useSharedValue, 
   withTiming, 
@@ -80,11 +80,12 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
   }, []);
 
   const handleActivation = useCallback(async () => {
-    try {
-      // Trigger heavy impact haptic feedback
-      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    } catch (error) {
-      console.warn('Haptics not available:', error);
+    if (Platform.OS === 'ios') {
+      try {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      } catch (error) {
+        console.warn('Haptics not available:', error);
+      }
     }
 
     setIsActive(true);
@@ -127,10 +128,12 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
     return {
       opacity: 1,
       backgroundColor: 'rgba(45,52,35,0.0)',
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
+      style: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+      },
       elevation: 5,
       borderRadius: 35,
       overflow: 'hidden',
@@ -188,11 +191,12 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
                 {...size}
                 key={index}
                 onPress={async () => {
-                  try {
-                    // Trigger medium impact haptic feedback for button presses
-                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  } catch (error) {
-                    console.warn('Haptics not available:', error);
+                  if (Platform.OS === 'ios') {
+                    try {
+                      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    } catch (error) {
+                      console.warn('Haptics not available:', error);
+                    }
                   }
                   
                   if (index !== currentIndex) {
@@ -268,8 +272,8 @@ const styles = StyleSheet.create({
     zIndex: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    width: NAV_WIDTH,
-    left: HORIZONTAL_MARGIN,
+    width: '90%',
+    left: '5%',
   },
   backgroundContainer: {
     position: 'absolute',
@@ -285,7 +289,7 @@ const styles = StyleSheet.create({
     resizeMode: 'cover',
   },
   content: {
-    padding: 8,
-    paddingHorizontal: 12,
+    padding: '2%',
+    paddingHorizontal: '3%',
   },
 }); 
