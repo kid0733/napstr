@@ -20,12 +20,20 @@ export function LyricsProvider({ children }: { children: React.ReactNode }) {
   const [lyrics, setLyrics] = useState<LyricsData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentTrackId, setCurrentTrackId] = useState<string | null>(null);
 
   const fetchLyrics = useCallback(async (trackId: string) => {
     if (!trackId) {
       console.log('\n=== LYRICS CONTEXT: Invalid Request ===');
       console.log('No track ID provided');
       return;
+    }
+
+    // Clear lyrics if it's a different song
+    if (currentTrackId !== trackId) {
+      console.log('New song detected, clearing previous lyrics');
+      setLyrics(null);
+      setCurrentTrackId(trackId);
     }
 
     try {
@@ -76,11 +84,12 @@ export function LyricsProvider({ children }: { children: React.ReactNode }) {
           isLoading: false,
           error,
           lyricsLength: lyrics?.lines?.length,
-          currentLyrics: lyrics
+          currentLyrics: lyrics,
+          currentTrackId
         });
       }, 0);
     }
-  }, []);
+  }, [currentTrackId]);
 
   const contextValue = useMemo(() => ({
     lyrics,

@@ -1,9 +1,9 @@
-import React, { memo, useState, useCallback, useEffect } from 'react';
+import React, { memo, useState, useCallback, useEffect, useRef } from 'react';
 import { View, Text, Image, StyleSheet, Dimensions, Pressable, ScrollView } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
 import { Blur } from '@/components/Blur/Blur';
-import { ProgressBar } from '@/components/ProgressBar';
+import { ProgressBar, type ProgressBarProps } from '../ProgressBar';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
 import Animated, {
@@ -206,7 +206,8 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         position = 0,
         queue = [],
         currentIndex,
-        playSong
+        playSong,
+        seek
     } = usePlayer();
 
     const [showOptions, setShowOptions] = useState(false);
@@ -217,6 +218,59 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
 
     const [showLyrics, setShowLyrics] = useState(false);
     const flipAnimation = useSharedValue(0);
+
+    const scrollViewRef = useRef<ScrollView>(null);
+
+    useEffect(() => {
+        if (currentTrack?.track_id && showLyrics) {
+            fetchLyrics(currentTrack.track_id);
+        }
+    }, [currentTrack?.track_id, showLyrics, fetchLyrics]);
+
+    const getCurrentLineIndex = useCallback((currentPosition: number) => {
+        if (!lyrics?.lines) return -1;
+        
+        const positionMs = currentPosition * 1000;
+        const index = lyrics.lines.findIndex((line, idx) => {
+            const isCurrentLine = positionMs >= line.startTimeMs && 
+                (idx === lyrics.lines.length - 1 || positionMs < lyrics.lines[idx + 1].startTimeMs);
+            return isCurrentLine;
+        });
+        
+        return index;
+    }, [lyrics]);
+
+    useEffect(() => {
+        if (!lyrics?.lines || !showLyrics) return;
+
+        const currentLineIndex = getCurrentLineIndex(position);
+
+        if (currentLineIndex >= 0 && scrollViewRef.current) {
+            // Calculate the total content height and visible area height
+            const totalLines = lyrics.lines.length;
+            const lineHeight = 48; // Height of each line
+            const lineGap = 8; // Gap between lines (margins)
+            const totalLineSpacing = lineHeight + lineGap;
+            const visibleHeight = SCREEN_WIDTH - 32;
+
+            // Calculate scroll position based on current line's position including gaps
+            const currentLinePosition = currentLineIndex * totalLineSpacing;
+            const scrollPosition = Math.max(
+                0,
+                currentLinePosition - (visibleHeight / 2) + (totalLineSpacing / 2)
+            );
+
+            // Ensure we don't scroll past the bottom
+            const totalContentHeight = totalLines * totalLineSpacing;
+            const maxScroll = totalContentHeight - visibleHeight;
+            const finalScrollPosition = Math.min(scrollPosition, maxScroll);
+
+            scrollViewRef.current.scrollTo({
+                y: finalScrollPosition,
+                animated: true
+            });
+        }
+    }, [position, lyrics?.lines, showLyrics, getCurrentLineIndex]);
 
     useEffect(() => {
         if (visible) {
@@ -235,40 +289,23 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         console.log('Current Lyrics State:', lyrics);
         console.log('Is Loading:', isLoading);
         console.log('Show Lyrics:', showLyrics);
-        console.log('Flip Animation Value:', flipAnimation.value);
         
         if (!lyrics && currentTrack?.track_id && !isLoading) {
             console.log('Fetching lyrics for track:', currentTrack.track_id);
             fetchLyrics(currentTrack.track_id);
         }
 
-        if (lyrics || !showLyrics) {
-            console.log('Triggering flip animation');
-            const toValue = showLyrics ? 0 : 1;
-            flipAnimation.value = withTiming(toValue, {
-                duration: 800,
-                easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-            }, (finished) => {
-                if (finished) {
-                    console.log('Flip animation finished, setting showLyrics to:', !showLyrics);
-                    runOnJS(setShowLyrics)(!showLyrics);
-                }
-            });
-        }
-    }, [currentTrack, lyrics, isLoading, showLyrics, flipAnimation]);
-
-    useEffect(() => {
-        console.log('\n=== MaximizedPlayer: Lyrics Effect ===');
-        console.log('Show Lyrics:', showLyrics);
-        console.log('Current Track:', currentTrack);
-        console.log('Current Lyrics:', lyrics);
-        console.log('Is Loading:', isLoading);
-        
-        if (showLyrics && !lyrics && currentTrack?.track_id && !isLoading) {
-            console.log('Auto-fetching lyrics for current track:', currentTrack.track_id);
-            fetchLyrics(currentTrack.track_id);
-        }
-    }, [showLyrics, lyrics, currentTrack, isLoading, fetchLyrics]);
+        const toValue = showLyrics ? 0 : 1;
+        flipAnimation.value = withTiming(toValue, {
+            duration: 800,
+            easing: Easing.bezier(0.25, 0.1, 0.25, 1),
+        }, (finished) => {
+            if (finished) {
+                console.log('Flip animation finished, setting showLyrics to:', !showLyrics);
+                runOnJS(setShowLyrics)(!showLyrics);
+            }
+        });
+    }, [currentTrack, lyrics, isLoading, showLyrics, flipAnimation, fetchLyrics]);
 
     const handleClose = useCallback(() => {
         setIsClosing(true);
@@ -284,6 +321,7 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
     }, [onClose]);
 
     const handlePlayPause = useCallback(async () => {
+        console.log('Manual play/pause triggered');
         try {
             await playPause();
         } catch (error) {
@@ -373,6 +411,34 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         };
     });
 
+    const renderLyrics = useCallback(() => {
+        if (!lyrics?.lines) {
+            return <Text style={styles.lyricLine}>No lyrics available</Text>;
+        }
+
+        const currentLineIndex = getCurrentLineIndex(position);
+
+        return lyrics.lines.map((line, index) => {
+            const isActive = index === currentLineIndex;
+            const isPrevious = index === currentLineIndex - 1;
+            const isNext = index === currentLineIndex + 1;
+
+            return (
+                <Text 
+                    key={index} 
+                    style={[
+                        styles.lyricLine,
+                        isActive && styles.lyricLineActive,
+                        isPrevious && styles.lyricLinePrevious,
+                        isNext && styles.lyricLineNext
+                    ]}
+                >
+                    {line.words}
+                </Text>
+            );
+        });
+    }, [lyrics?.lines, position, getCurrentLineIndex]);
+
     if (!visible || !currentTrack || isClosing) {
         return null;
     }
@@ -415,23 +481,24 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                             <Animated.View style={[styles.artworkWrapper, backAnimatedStyle]}>
                                 {showLyrics && (
                                     <View style={styles.lyricsWrapper}>
-                                        <Text style={styles.lyricsTitle}>Lyrics</Text>
-                                        <ScrollView 
-                                            style={styles.lyricsScroll}
-                                            showsVerticalScrollIndicator={false}
-                                        >
-                                            <View style={styles.lyricsContent}>
-                                                {lyrics?.lines ? (
-                                                    lyrics.lines.map((line, index) => (
-                                                        <Text key={index} style={styles.lyricLine}>
-                                                            {line.words}
-                                                        </Text>
-                                                    ))
-                                                ) : (
-                                                    <Text style={styles.lyricLine}>No lyrics available</Text>
-                                                )}
-                                            </View>
-                                        </ScrollView>
+                                        <Image 
+                                            source={{ uri: currentTrack.artwork }}
+                                            style={[StyleSheet.absoluteFill]}
+                                            blurRadius={50}
+                                            resizeMode="cover"
+                                        />
+                                        <View style={styles.darkOverlay} />
+                                        <View style={styles.lyricsContainer}>
+                                            <ScrollView 
+                                                ref={scrollViewRef}
+                                                style={styles.lyricsScroll}
+                                                showsVerticalScrollIndicator={false}
+                                            >
+                                                <View style={styles.lyricsContent}>
+                                                    {renderLyrics()}
+                                                </View>
+                                            </ScrollView>
+                                        </View>
                                     </View>
                                 )}
                             </Animated.View>
@@ -441,9 +508,10 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
 
                         <View style={styles.progressContainer}>
                             <ProgressBar
-                                progress={progress}
-                                currentTime={position}
-                                duration={duration}
+                                progress={progress || 0}
+                                currentTime={position || 0}
+                                duration={duration || 0}
+                                onSeek={seek}
                             />
                         </View>
 
@@ -662,33 +730,54 @@ const styles = StyleSheet.create({
     },
     lyricsWrapper: {
         flex: 1,
-        backgroundColor: colors.background,
-        borderRadius: 8,
-        padding: 16,
         width: '100%',
         height: '100%',
-        justifyContent: 'flex-start',
-        alignItems: 'stretch',
+        position: 'relative',
+        overflow: 'hidden',
+        borderRadius: 8,
     },
-    lyricsTitle: {
-        fontSize: 24,
-        color: colors.text,
-        fontWeight: '600',
-        textAlign: 'center',
-        marginBottom: 24,
+    darkOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+        zIndex: 1,
+    },
+    lyricsContainer: {
+        flex: 1,
+        padding: 16,
+        zIndex: 2,
+        justifyContent: 'center',
     },
     lyricsScroll: {
         flex: 1,
     },
     lyricsContent: {
-        paddingBottom: 24,
+        paddingVertical: (SCREEN_WIDTH - 32) / 4, // Half of artwork container height for padding
         paddingHorizontal: 16,
     },
     lyricLine: {
-        fontSize: 18,
-        color: colors.text,
+        fontSize: 16,
+        color: colors.greenTertiary,
         marginVertical: 12,
         textAlign: 'center',
         lineHeight: 24,
+        opacity: 0.3,
+        textShadowColor: 'rgba(0, 0, 0, 0.75)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
+    },
+    lyricLineActive: {
+        color: colors.greenPrimary,
+        opacity: 1,
+        fontSize: 20,
+        fontWeight: '600',
+        transform: [{ scale: 1.1 }],
+    },
+    lyricLinePrevious: {
+        opacity: 0.5,
+        fontSize: 18,
+    },
+    lyricLineNext: {
+        opacity: 0.5,
+        fontSize: 18,
     },
 });

@@ -25,6 +25,7 @@ export interface PlayerContextType {
     toggleRepeat: () => void;
     toggleMaximized: () => void;
     playSong: (song: Song, queue?: Song[]) => Promise<void>;
+    seek: (position: number) => Promise<void>;
 }
 
 const defaultContext: PlayerContextType = {
@@ -45,6 +46,7 @@ const defaultContext: PlayerContextType = {
     toggleRepeat: () => {},
     toggleMaximized: () => {},
     playSong: async () => {},
+    seek: async () => {},
 };
 
 const PlayerContext = createContext<PlayerContextType>(defaultContext);
@@ -179,32 +181,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         positionRef.current = newPosition;
         durationRef.current = newDuration;
 
-        const shouldUpdateProgress = Math.abs(state.progress - newProgress) > 0.01;
-        const shouldUpdatePosition = Math.abs(state.position - newPosition) > 1;
-        const shouldUpdateDuration = Math.abs(state.duration - newDuration) > 1;
-        const shouldUpdatePlaying = state.isPlaying !== status.isPlaying;
-
-        const updates: PlayerAction[] = [];
-
-        if (shouldUpdateProgress) {
-            updates.push({ type: 'SET_PROGRESS', payload: newProgress });
-        }
-
-        if (shouldUpdatePosition) {
-            updates.push({ type: 'SET_POSITION', payload: newPosition });
-        }
-
-        if (shouldUpdateDuration) {
-            updates.push({ type: 'SET_DURATION', payload: newDuration });
-        }
-
-        if (shouldUpdatePlaying) {
-            updates.push({ type: 'SET_PLAYING', payload: status.isPlaying });
-        }
-
-        if (updates.length > 0) {
-            updates.forEach(update => dispatch(update));
-        }
+        dispatch({ type: 'SET_PROGRESS', payload: newProgress });
+        dispatch({ type: 'SET_POSITION', payload: newPosition });
+        dispatch({ type: 'SET_DURATION', payload: newDuration });
 
         lastUpdateTimeRef.current = now;
 
@@ -215,7 +194,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                 handlePlayNextRef.current?.().catch(console.error);
             }
         }
-    }, [state.progress, state.position, state.duration, state.isPlaying, state.repeatMode]);
+    }, []);
 
     useEffect(() => {
         Audio.setAudioModeAsync({
@@ -252,22 +231,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             const { sound: newSound } = await Audio.Sound.createAsync(
                 { uri: streamData.url },
                 { shouldPlay: true },
-                async (status) => {
-                    if (!status.isLoaded) return;
-                    
-                    dispatch({ type: 'SET_PLAYING', payload: status.isPlaying });
-
-                    if (status.didJustFinish) {
-                        if (state.repeatMode === 'one') {
-                            await newSound.replayAsync();
-                        } else if (handlePlayNextRef.current) {
-                            await handlePlayNextRef.current();
-                        }
-                    }
-                }
+                onPlaybackStatusUpdate
             );
 
-            console.log('Sound created successfully');
+            console.log('New sound created successfully');
             setSound(newSound);
             soundRef.current = newSound;
             dispatch({ type: 'SET_CURRENT_SONG', payload: song });
@@ -276,8 +243,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             if (queue) {
                 const newQueue = state.isShuffled ? shuffleArray(queue) : queue;
                 const currentIndex = newQueue.findIndex(s => s.track_id === song.track_id);
-                dispatch({ type: 'SET_QUEUE', payload: { queue: newQueue, currentIndex } });
-                dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
+                dispatch({ 
+                    type: 'SET_QUEUE', 
+                    payload: { 
+                        queue: newQueue,
+                        currentIndex
+                    }
+                });
+                if (!state.isShuffled) {
+                    dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
+                }
             }
         } catch (error) {
             console.error('Error in playSong:', error);
@@ -291,7 +266,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             loadingRef.current = false;
             setIsLoading(false);
         }
-    }, [cleanupSound, state.isShuffled, shuffleArray, state.repeatMode]);
+    }, [cleanupSound, state.isShuffled, shuffleArray, onPlaybackStatusUpdate]);
 
     const handlePlayNext: PlayNextFunction = useCallback(async () => {
         if (state.queue.length === 0 || state.currentIndex === -1) return;
@@ -395,18 +370,28 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         if (!sound) return;
 
         try {
+            console.log('PlayerContext: Toggling play/pause...');
             const status = await sound.getStatusAsync();
-            if (status.isLoaded) {
-                if (status.isPlaying) {
-                    await sound.pauseAsync();
-                    dispatch({ type: 'SET_PLAYING', payload: false });
-                } else {
-                    await sound.playAsync();
-                    dispatch({ type: 'SET_PLAYING', payload: true });
-                }
+            if (!status.isLoaded) {
+                console.log('PlayerContext: Sound is not loaded');
+                return;
+            }
+
+            if (status.isPlaying) {
+                console.log('PlayerContext: Currently playing, will pause');
+                dispatch({ type: 'SET_PLAYING', payload: false });
+                await sound.pauseAsync();
+            } else {
+                console.log('PlayerContext: Currently paused, will play');
+                dispatch({ type: 'SET_PLAYING', payload: true });
+                await sound.playAsync();
             }
         } catch (error) {
-            console.error('Error toggling play/pause:', error);
+            console.error('PlayerContext: Error toggling play/pause:', error);
+            const currentStatus = await sound.getStatusAsync();
+            if (currentStatus.isLoaded) {
+                dispatch({ type: 'SET_PLAYING', payload: currentStatus.isPlaying });
+            }
         }
     }, [sound]);
 
@@ -425,6 +410,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: 'SET_MAXIMIZED', payload: !state.isMaximized });
     }, [state.isMaximized]);
 
+    const seek = useCallback(async (position: number) => {
+        if (!sound) return;
+        try {
+            await sound.setPositionAsync(position * 1000); // Convert to milliseconds
+        } catch (error) {
+            console.error('Error seeking:', error);
+        }
+    }, [sound]);
+
     const value = useMemo(() => ({
         currentSong: state.currentSong,
         isPlaying: state.isPlaying,
@@ -442,7 +436,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         toggleShuffle,
         toggleRepeat,
         toggleMaximized,
-        playSong
+        playSong,
+        seek
     }), [
         state.currentSong,
         state.isPlaying,
@@ -460,7 +455,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         toggleShuffle,
         toggleRepeat,
         toggleMaximized,
-        playSong
+        playSong,
+        seek
     ]);
 
     return (
