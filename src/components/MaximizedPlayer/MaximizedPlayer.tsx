@@ -16,7 +16,8 @@ import Animated, {
     WithSpringConfig,
     Easing,
     interpolate,
-    withTiming
+    withTiming,
+    withRepeat
 } from 'react-native-reanimated';
 import { SongOptions } from '@/components/SongOptions/SongOptions';
 import { Song, LyricsData, LyricsLine } from '@/services/api';
@@ -26,6 +27,7 @@ import { LYRICS_BASE_URL } from '@/services/api';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
+const LINE_HEIGHT = SCREEN_WIDTH * 0.15;
 
 interface TrackInfo {
     title: string;
@@ -187,6 +189,92 @@ const QueueItem = memo(function QueueItem({
     );
 });
 
+interface LyricLineProps {
+    line: LyricsLine;
+    type: 'active' | 'previous' | 'next' | 'hidden';
+    index: number;
+    currentLineIndex: number;
+}
+
+const LyricLine = memo(function LyricLine({ line, type, index, currentLineIndex }: LyricLineProps) {
+    const basePosition = index * LINE_HEIGHT;
+    const translateY = useSharedValue(basePosition);
+    const scale = useSharedValue(type === 'active' ? 1 : 0.95);
+    const opacity = useSharedValue(
+        type === 'active' ? 1 :
+        type === 'hidden' ? 0.2 :
+        0.5
+    );
+
+    useEffect(() => {
+        // First move with timing for smooth initial movement
+        translateY.value = withTiming(basePosition, {
+            duration: 800,
+            easing: Easing.bezier(0.16, 1, 0.3, 1), // Custom easing curve for smooth movement
+        }, () => {
+            // Then add a subtle spring effect at the end
+            translateY.value = withSpring(basePosition, {
+                mass: 0.8,
+                stiffness: 90,
+                damping: 15,
+                velocity: 0,
+                restDisplacementThreshold: 0.01,
+                restSpeedThreshold: 0.01,
+            });
+        });
+
+        // Smooth opacity transitions
+        opacity.value = withTiming(
+            type === 'active' ? 1 :
+            type === 'hidden' ? 0.2 :
+            0.5,
+            {
+                duration: 600,
+                easing: Easing.bezier(0.4, 0, 0.2, 1),
+            }
+        );
+
+        // Smooth scale transitions
+        scale.value = withTiming(
+            type === 'active' ? 1 : 0.95,
+            {
+                duration: 600,
+                easing: Easing.bezier(0.4, 0, 0.2, 1),
+            }
+        );
+    }, [basePosition, type]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [
+            { translateY: translateY.value },
+            { scale: scale.value }
+        ],
+        opacity: opacity.value
+    }));
+
+    return (
+        <Animated.View 
+            style={[
+                styles.lyricLineContainer,
+                animatedStyle
+            ]}
+        >
+            <Text 
+                style={[
+                    styles.lyricLine,
+                    type === 'active' && styles.lyricLineActive,
+                    type === 'previous' && styles.lyricLinePrevious,
+                    type === 'next' && styles.lyricLineNext,
+                    type === 'hidden' && styles.lyricLineHidden
+                ]} 
+                numberOfLines={2}
+            >
+                {line.words}
+            </Text>
+        </Animated.View>
+    );
+});
+
 export const MaximizedPlayer = memo(function MaximizedPlayer({
     visible,
     onClose,
@@ -218,19 +306,14 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
 
     const [showLyrics, setShowLyrics] = useState(false);
     const flipAnimation = useSharedValue(0);
+    const lyricsTranslateY = useSharedValue(0);
 
     const scrollViewRef = useRef<ScrollView>(null);
-
-    useEffect(() => {
-        if (currentTrack?.track_id && showLyrics) {
-            fetchLyrics(currentTrack.track_id);
-        }
-    }, [currentTrack?.track_id, showLyrics, fetchLyrics]);
 
     const getCurrentLineIndex = useCallback((currentPosition: number) => {
         if (!lyrics?.lines) return -1;
         
-        const positionMs = currentPosition * 1000;
+        const positionMs = (currentPosition * 1000) + 250;
         const index = lyrics.lines.findIndex((line, idx) => {
             const isCurrentLine = positionMs >= line.startTimeMs && 
                 (idx === lyrics.lines.length - 1 || positionMs < lyrics.lines[idx + 1].startTimeMs);
@@ -240,37 +323,28 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         return index;
     }, [lyrics]);
 
+    const lyricsAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ translateY: lyricsTranslateY.value }]
+    }), []);
+
     useEffect(() => {
         if (!lyrics?.lines || !showLyrics) return;
 
         const currentLineIndex = getCurrentLineIndex(position);
-
-        if (currentLineIndex >= 0 && scrollViewRef.current) {
-            // Calculate the total content height and visible area height
-            const totalLines = lyrics.lines.length;
-            const lineHeight = 48; // Height of each line
-            const lineGap = 8; // Gap between lines (margins)
-            const totalLineSpacing = lineHeight + lineGap;
-            const visibleHeight = SCREEN_WIDTH - 32;
-
-            // Calculate scroll position based on current line's position including gaps
-            const currentLinePosition = currentLineIndex * totalLineSpacing;
-            const scrollPosition = Math.max(
-                0,
-                currentLinePosition - (visibleHeight / 2) + (totalLineSpacing / 2)
-            );
-
-            // Ensure we don't scroll past the bottom
-            const totalContentHeight = totalLines * totalLineSpacing;
-            const maxScroll = totalContentHeight - visibleHeight;
-            const finalScrollPosition = Math.min(scrollPosition, maxScroll);
-
-            scrollViewRef.current.scrollTo({
-                y: finalScrollPosition,
-                animated: true
+        if (currentLineIndex >= 0) {
+            // Smoothly animate to the new position
+            lyricsTranslateY.value = withTiming(-currentLineIndex * LINE_HEIGHT, {
+                duration: 300,
+                easing: Easing.bezier(0.4, 0.0, 0.2, 1),
             });
         }
     }, [position, lyrics?.lines, showLyrics, getCurrentLineIndex]);
+
+    useEffect(() => {
+        if (currentTrack?.track_id && showLyrics) {
+            fetchLyrics(currentTrack.track_id);
+        }
+    }, [currentTrack?.track_id, showLyrics, fetchLyrics]);
 
     useEffect(() => {
         if (visible) {
@@ -341,11 +415,11 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
 
     const handleQueueItemPress = useCallback(async (song: Song) => {
         try {
-            await playSong(song);
+            await playSong(song, queue);
         } catch (error) {
             console.error('Error playing song from queue:', error);
         }
-    }, [playSong]);
+    }, [playSong, queue]);
 
     const panGestureEvent = useAnimatedGestureHandler<PanGestureHandlerGestureEvent, GestureContext>({
         onStart: (_, context) => {
@@ -432,26 +506,36 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         }
 
         const currentLineIndex = getCurrentLineIndex(position);
+        const visibleLines = [-1, 0, 1, 2].map(offset => {
+            const index = currentLineIndex + offset;
+            if (index < 0 || index >= lyrics.lines.length) return null;
+            return {
+                line: lyrics.lines[index],
+                type: offset === 0 ? 'active' : 
+                      offset === -1 ? 'previous' :
+                      offset === 1 ? 'next' :
+                      'hidden'
+            };
+        }).filter((item): item is { line: LyricsLine; type: 'active' | 'previous' | 'next' | 'hidden' } => item !== null);
 
-        return lyrics.lines.map((line, index) => {
-            const isActive = index === currentLineIndex;
-            const isPrevious = index === currentLineIndex - 1;
-            const isNext = index === currentLineIndex + 1;
-
-            return (
-                <Text 
-                    key={index} 
-                    style={[
-                        styles.lyricLine,
-                        isActive && styles.lyricLineActive,
-                        isPrevious && styles.lyricLinePrevious,
-                        isNext && styles.lyricLineNext
-                    ]}
-                >
-                    {line.words}
-                </Text>
-            );
-        });
+        return (
+            <View style={styles.lyricsContentWrapper}>
+                <View style={styles.highlightContainer}>
+                    <View style={styles.highlightBar} />
+                </View>
+                <View style={styles.lyricsScrollContent}>
+                    {visibleLines.map((item, index) => (
+                        <LyricLine
+                            key={`${currentLineIndex}-${index}`}
+                            line={item.line}
+                            type={item.type}
+                            index={index}
+                            currentLineIndex={currentLineIndex}
+                        />
+                    ))}
+                </View>
+            </View>
+        );
     }, [lyrics?.lines, position, getCurrentLineIndex]);
 
     if (!visible || !currentTrack || isClosing) {
@@ -509,15 +593,9 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                                         />
                                         <View style={styles.darkOverlay} />
                                         <View style={styles.lyricsContainer}>
-                                            <ScrollView 
-                                                ref={scrollViewRef}
-                                                style={styles.lyricsScroll}
-                                                showsVerticalScrollIndicator={false}
-                                            >
-                                                <View style={styles.lyricsContent}>
-                                                    {renderLyrics()}
-                                                </View>
-                                            </ScrollView>
+                                            <View style={styles.lyricsContent}>
+                                                {renderLyrics()}
+                                            </View>
                                         </View>
                                     </View>
                                 )}
@@ -773,39 +851,79 @@ const styles = StyleSheet.create({
         padding: '4%',
         zIndex: 2,
         justifyContent: 'center',
-    },
-    lyricsScroll: {
-        flex: 1,
+        alignItems: 'center',
+        width: '100%',
+        height: '100%',
+        position: 'absolute',
+        overflow: 'hidden',
+        top: '15%',
     },
     lyricsContent: {
-        paddingVertical: '25%',
-        paddingHorizontal: '4%',
+        width: '100%',
+        height: LINE_HEIGHT * 5,
+        position: 'relative',
+    },
+    lyricsContentWrapper: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+        overflow: 'hidden',
+    },
+    highlightContainer: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        height: LINE_HEIGHT,
+        top: '35%',
+        transform: [{ translateY: -(LINE_HEIGHT / 2) }],
+        zIndex: 1,
+    },
+    highlightBar: {
+        flex: 1,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 8,
+        marginHorizontal: '4%',
+        marginVertical: SCREEN_WIDTH * 0.02,
+    },
+    lyricsScrollContent: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        height: LINE_HEIGHT * 5,
+        top: '55%',
+        transform: [{ translateY: -(LINE_HEIGHT * 2.5) }],
+    },
+    lyricLineContainer: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        height: LINE_HEIGHT,
+        width: '100%',
+        justifyContent: 'center',
+        paddingVertical: SCREEN_WIDTH * 0.02,
     },
     lyricLine: {
         fontSize: SCREEN_WIDTH * 0.04,
         color: colors.greenTertiary,
-        marginVertical: '3%',
         textAlign: 'center',
-        lineHeight: SCREEN_WIDTH * 0.06,
-        opacity: 0.3,
-        textShadowColor: 'rgba(0, 0, 0, 0.75)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 2,
+        paddingHorizontal: '4%',
+        width: '100%',
+        lineHeight: SCREEN_WIDTH * 0.05,
     },
     lyricLineActive: {
         color: colors.greenPrimary,
-        opacity: 1,
-        fontSize: SCREEN_WIDTH * 0.05,
+        fontSize: SCREEN_WIDTH * 0.045,
         fontWeight: '600',
-        transform: [{ scale: 1.1 }],
     },
     lyricLinePrevious: {
-        opacity: 0.5,
-        fontSize: SCREEN_WIDTH * 0.045,
+        fontSize: SCREEN_WIDTH * 0.04,
     },
     lyricLineNext: {
-        opacity: 0.5,
-        fontSize: SCREEN_WIDTH * 0.045,
+        fontSize: SCREEN_WIDTH * 0.04,
+    },
+    lyricLineHidden: {
+        fontSize: SCREEN_WIDTH * 0.035,
     },
     noLyricsContainer: {
         flex: 1,

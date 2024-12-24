@@ -62,12 +62,11 @@ export class SongStorage {
         return (totalBytes / (1024 * 1024)).toFixed(2); // Convert to MB
     }
 
-    async downloadSong(trackId: string, url: string): Promise<string> {
+    async downloadSong(trackId: string, url: string): Promise<void> {
         await this.initialize();
 
-        console.log('\n=== SongStorage: Downloading Song ===');
+        console.log('\n=== SongStorage: Starting Background Download ===');
         console.log('Track ID:', trackId);
-        console.log('URL:', url);
         
         const filePath = `${SONGS_DIR}${trackId}.mp3`;
         
@@ -77,26 +76,17 @@ export class SongStorage {
             console.log('Found existing metadata, checking file...');
             const fileExists = await FileSystem.getInfoAsync(existingMetadata.filePath);
             if (fileExists.exists) {
-                console.log('✅ Song already downloaded, returning cached version');
-                console.log('File size:', (fileExists as any).size ? `${((fileExists as any).size / (1024 * 1024)).toFixed(2)} MB` : 'unknown');
-                return existingMetadata.filePath;
+                console.log('✅ File already exists, skipping download');
+                return;
             }
-            console.log('❌ Cached file not found, will download again');
+            console.log('❌ File not found, will download');
         }
 
         // Check if download is already in progress
         const existingDownload = this.activeDownloads.get(trackId);
         if (existingDownload) {
-            console.log('Download already in progress, resuming...');
-            try {
-                const result = await existingDownload.resumeAsync();
-                if (!result) {
-                    throw new Error('Resume failed - no result');
-                }
-                return result.uri;
-            } catch (error) {
-                console.log('Failed to resume download, starting fresh:', error);
-            }
+            console.log('Download already in progress');
+            return;
         }
 
         console.log('Starting download...');
@@ -130,10 +120,6 @@ export class SongStorage {
             console.log('Download complete:', {
                 uri: downloadResult.uri,
                 status: downloadResult.status,
-                headers: downloadResult.headers,
-                size: downloadResult.headers['Content-Length'] 
-                    ? `${(parseInt(downloadResult.headers['Content-Length']) / (1024 * 1024)).toFixed(2)} MB` 
-                    : 'unknown'
             });
             
             // Get file info for size
@@ -157,15 +143,13 @@ export class SongStorage {
             await this.saveMetadata();
             console.log('✅ Song metadata saved successfully');
             console.log('Total storage used:', this.getTotalStorageSize(), 'MB');
-
-            // Cleanup the active download
-            this.activeDownloads.delete(trackId);
-
-            return downloadResult.uri;
         } catch (error) {
             console.error('❌ Download failed:', error);
-            this.activeDownloads.delete(trackId);
+            // Clean up failed download
+            FileSystem.deleteAsync(filePath, { idempotent: true }).catch(console.error);
             throw error;
+        } finally {
+            this.activeDownloads.delete(trackId);
         }
     }
 
