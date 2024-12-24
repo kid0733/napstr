@@ -284,15 +284,10 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
     }, [visible]);
 
     const handleLyricsPress = useCallback(() => {
-        console.log('\n=== MaximizedPlayer: Lyrics Button Press ===');
-        console.log('Current Track:', currentTrack);
-        console.log('Current Lyrics State:', lyrics);
-        console.log('Is Loading:', isLoading);
-        console.log('Show Lyrics:', showLyrics);
-        
         if (!lyrics && currentTrack?.track_id && !isLoading) {
-            console.log('Fetching lyrics for track:', currentTrack.track_id);
-            fetchLyrics(currentTrack.track_id);
+            fetchLyrics(currentTrack.track_id).catch(() => {
+                // Silently handle the error - the UI will show "No lyrics available"
+            });
         }
 
         const toValue = showLyrics ? 0 : 1;
@@ -301,7 +296,6 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             easing: Easing.bezier(0.455, 0.03, 0.515, 0.955),
         }, (finished) => {
             if (finished) {
-                console.log('Flip animation finished, setting showLyrics to:', !showLyrics);
                 runOnJS(setShowLyrics)(!showLyrics);
             }
         });
@@ -429,8 +423,12 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
     });
 
     const renderLyrics = useCallback(() => {
-        if (!lyrics?.lines) {
-            return <Text style={styles.lyricLine}>No lyrics available</Text>;
+        if (!lyrics?.lines || lyrics.lines.length === 0) {
+            return (
+                <View style={styles.noLyricsContainer}>
+                    <Text style={styles.lyricLine}>No lyrics available</Text>
+                </View>
+            );
         }
 
         const currentLineIndex = getCurrentLineIndex(position);
@@ -808,5 +806,11 @@ const styles = StyleSheet.create({
     lyricLineNext: {
         opacity: 0.5,
         fontSize: SCREEN_WIDTH * 0.045,
+    },
+    noLyricsContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: '4%',
     },
 });

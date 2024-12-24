@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { Song } from '@/services/api';
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import { api } from '@/services/api';
+import { SongStorage } from '@/services/storage/SongStorage';
 
 type PlaySongFunction = (song: Song, queue?: Song[]) => Promise<void>;
 type PlayNextFunction = () => Promise<void>;
@@ -138,6 +139,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const durationRef = useRef(state.duration);
     const lastUpdateTimeRef = useRef(0);
     const handlePlayNextRef = useRef<() => Promise<void>>();
+    const songStorage = useMemo(() => SongStorage.getInstance(), []);
 
     const shuffleArray = useCallback((array: Song[]) => {
         const newArray = [...array];
@@ -205,6 +207,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }).catch(console.error);
     }, []);
 
+    useEffect(() => {
+        // Run cleanup every hour
+        const cleanupInterval = setInterval(() => {
+            songStorage.cleanupOldSongs(7).catch(console.warn);
+        }, 60 * 60 * 1000);
+
+        return () => clearInterval(cleanupInterval);
+    }, [songStorage]);
+
     const playSong: PlaySongFunction = useCallback(async (song: Song, queue?: Song[]) => {
         if (loadingRef.current) {
             console.log('Already loading a song, skipping request');
@@ -214,27 +225,31 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         try {
             loadingRef.current = true;
             setIsLoading(true);
-            console.log('Starting playSong function...');
 
             if (soundRef.current) {
-                console.log('Cleaning up existing sound before playing new song...');
                 await cleanupSound(soundRef.current);
                 setSound(undefined);
                 soundRef.current = undefined;
-                console.log('Existing sound cleaned up successfully');
             }
 
-            const streamData = await api.songs.getStreamUrl(song.track_id);
-            console.log('Got stream URL:', streamData.url);
+            // Try to get cached song first
+            let songUri = await songStorage.getSongFile(song.track_id);
+            
+            if (!songUri) {
+                // If not cached, get stream URL and download
+                const streamData = await api.songs.getStreamUrl(song.track_id);
+                songUri = await songStorage.downloadSong(song.track_id, streamData.url);
+            } else {
+                // Update last played time if using cached version
+                await songStorage.updateLastPlayed(song.track_id);
+            }
 
-            console.log('Creating new sound...');
             const { sound: newSound } = await Audio.Sound.createAsync(
-                { uri: streamData.url },
+                { uri: songUri },
                 { shouldPlay: true },
                 onPlaybackStatusUpdate
             );
 
-            console.log('New sound created successfully');
             setSound(newSound);
             soundRef.current = newSound;
             dispatch({ type: 'SET_CURRENT_SONG', payload: song });
@@ -266,7 +281,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             loadingRef.current = false;
             setIsLoading(false);
         }
-    }, [cleanupSound, state.isShuffled, shuffleArray, onPlaybackStatusUpdate]);
+    }, [state.isShuffled]);
 
     const handlePlayNext: PlayNextFunction = useCallback(async () => {
         if (state.queue.length === 0 || state.currentIndex === -1) return;

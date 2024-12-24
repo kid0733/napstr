@@ -133,13 +133,9 @@ export const api = {
     },
 
     lyrics: {
-        getLyrics: async (trackId: string): Promise<LyricsData> => {
-            console.log('\n=== LYRICS API: Starting Fetch ===');
-            console.log('1. Track ID:', trackId);
-
+        getLyrics: async (trackId: string): Promise<LyricsData | null> => {
             try {
                 const url = `${LYRICS_BASE_URL}/${trackId}`;
-                console.log('2. Making request to:', url);
                 
                 const response = await fetch(url, {
                     method: 'GET',
@@ -149,16 +145,18 @@ export const api = {
                     }
                 });
 
+                if (response.status === 404) {
+                    return null;
+                }
+
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 
                 const lrcText = await response.text();
                 if (!lrcText) {
-                    throw new Error('No lyrics data received');
+                    return null;
                 }
-
-                console.log('3. Raw LRC data received:', lrcText.substring(0, 100));
                 
                 // Parse the LRC format
                 const rawLines = lrcText.split('\n')
@@ -186,10 +184,8 @@ export const api = {
                     })
                     .filter((line: any): line is { startTimeMs: number; words: string } => line !== null);
 
-                console.log('4. Parsed lines:', rawLines.length);
-
                 if (rawLines.length === 0) {
-                    throw new Error('No valid lyrics lines found after parsing');
+                    return null;
                 }
 
                 // Calculate end times using the next line's start time
@@ -201,30 +197,15 @@ export const api = {
                     words: line.words
                 }));
 
-                const transformedData: LyricsData = {
+                return {
                     lines,
                     isSynchronized: true,
                     language: 'en'
                 };
 
-                console.log('5. Transformed data:', {
-                    lineCount: transformedData.lines.length,
-                    firstLine: transformedData.lines[0],
-                    lastLine: transformedData.lines[transformedData.lines.length - 1],
-                    isSynchronized: transformedData.isSynchronized,
-                    language: transformedData.language
-                });
-
-                return transformedData;
-
             } catch (error) {
-                console.error('\n=== LYRICS API: Error ===');
-                console.error('Failed to fetch lyrics:', error);
-                if (error instanceof Error) {
-                    console.error('Error details:', {
-                        message: error.message,
-                        stack: error.stack
-                    });
+                if (error instanceof Error && error.message.includes('404')) {
+                    return null;
                 }
                 throw error;
             }

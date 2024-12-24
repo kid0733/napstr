@@ -13,6 +13,7 @@
   "dependencies": {
     "@candlefinance/faster-image": "^1.7.2",
     "@expo/vector-icons": "^14.0.4",
+    "@react-native-async-storage/async-storage": "^2.1.0",
     "@react-native-community/blur": "^4.4.1",
     "axios": "^1.7.9",
     "expo": "~52.0.17",

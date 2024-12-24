@@ -24,70 +24,37 @@ export function LyricsProvider({ children }: { children: React.ReactNode }) {
 
   const fetchLyrics = useCallback(async (trackId: string) => {
     if (!trackId) {
-      console.log('\n=== LYRICS CONTEXT: Invalid Request ===');
-      console.log('No track ID provided');
       return;
     }
 
     // Clear lyrics if it's a different song
     if (currentTrackId !== trackId) {
-      console.log('New song detected, clearing previous lyrics');
       setLyrics(null);
       setCurrentTrackId(trackId);
     }
 
     try {
-      console.log('\n=== LYRICS CONTEXT: Starting Fetch ===');
-      console.log('1. Track ID:', trackId);
-      console.log('2. Current state:', { lyrics, isLoading, error });
-      
       setIsLoading(true);
       setError(null);
       
-      console.log('3. State reset complete. Making API call...');
-      
       const response = await api.lyrics.getLyrics(trackId);
-      console.log('4. API call successful:', {
-        numberOfLines: response.lines.length,
-        firstLine: response.lines[0]?.words,
-        lastLine: response.lines[response.lines.length - 1]?.words
-      });
       
-      if (!response.lines || response.lines.length === 0) {
-        console.log('5. No lyrics in response');
-        setError('No lyrics available');
+      // If response is null, it means no lyrics were found
+      if (!response) {
+        setLyrics(null);
         return;
       }
       
-      console.log('5. Setting lyrics in state:', response);
       setLyrics(response);
-      console.log('6. Lyrics set successfully');
-      
+
     } catch (err) {
-      console.error('\n=== LYRICS CONTEXT: Error ===');
-      console.error('Error details:', err);
-      if (axios.isAxiosError(err)) {
-        console.error('Axios error details:', {
-          status: err.response?.status,
-          data: err.response?.data,
-          url: err.config?.url,
-          method: err.config?.method
-        });
+      // Only set error for non-404 errors
+      if (err instanceof Error && !err.message.includes('404')) {
+        setError('Failed to fetch lyrics');
       }
-      setError('Failed to fetch lyrics');
+      setLyrics(null);
     } finally {
       setIsLoading(false);
-      // Use a timeout to ensure state updates have propagated
-      setTimeout(() => {
-        console.log('Final state:', { 
-          hasLyrics: !!lyrics,
-          isLoading: false,
-          error,
-          lyricsLength: lyrics?.lines?.length,
-          currentLyrics: lyrics,
-          currentTrackId
-        });
-      }, 0);
     }
   }, [currentTrackId]);
 
