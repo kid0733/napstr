@@ -1,17 +1,11 @@
 import axios from 'axios';
 
-interface ServerInfo {
-    ip: string;
-    port: string;
-    status: string;
-    env: string;
-}
-
-let BASE_URL = '';
-let isInitialized = false;
+// VPS Configuration
+const VPS_BASE_URL = 'https://napstr.uk/api/v1';
 
 // Add request timeout and better error handling
 const axiosInstance = axios.create({
+    baseURL: VPS_BASE_URL,
     timeout: 10000,
     headers: {
         'Content-Type': 'application/json'
@@ -20,6 +14,7 @@ const axiosInstance = axios.create({
 
 // Create a dedicated instance for lyrics requests with text/plain content type
 const lyricsAxiosInstance = axios.create({
+    baseURL: VPS_BASE_URL,
     timeout: 5000,
     headers: {
         'Accept': 'text/plain',
@@ -27,62 +22,27 @@ const lyricsAxiosInstance = axios.create({
     }
 });
 
-// List of possible server addresses to try
-const SERVER_ADDRESSES = [
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-    'http://192.168.0.102:3000',  // Your current IP
-];
-
-// Cloudflare Worker URL for lyrics
-export const LYRICS_BASE_URL = 'https://napstr-lyrics.napstr.workers.dev';
+export interface PaginatedResponse<T> {
+    data: T[];
+    pagination: {
+        total: number;
+        page: number;
+        pages: number;
+        limit: number;
+    };
+}
 
 export const api = {
-    initialize: async () => {
-        let lastError;
-
-        // Try each server address for main server
-        for (const baseUrl of SERVER_ADDRESSES) {
-            try {
-                console.log('Trying to connect to main server:', baseUrl);
-                const response = await axios.get<ServerInfo>(`${baseUrl}/api/server-info`, {
-                    timeout: 3000
-                });
-                
-                const { ip, port } = response.data;
-                console.log('Main server found at:', ip);
-                
-                // Set the base URL for all future requests
-                BASE_URL = `http://${ip}:${port}/api`;
-                axiosInstance.defaults.baseURL = BASE_URL;
-                
-                console.log('Main API initialized with URL:', BASE_URL);
-                isInitialized = true;
-                break;
-            } catch (error) {
-                console.log('Failed to connect to main server:', baseUrl);
-                lastError = error;
-                continue;
-            }
-        }
-
-        if (!isInitialized) {
-            console.error('Failed to connect to main server. Last error:', lastError);
-            throw lastError;
-        }
-
-        return true;
-    },
-
-    isReady: () => isInitialized,
-
     songs: {
-        getAll: async (): Promise<Song[]> => {
-            if (!isInitialized) throw new Error('API not initialized');
-            
+        getAll: async (page: number = 1, limit: number = 20): Promise<PaginatedResponse<Song>> => {
             try {
-                const response = await axiosInstance.get('/songs');
-                return response.data;
+                const response = await axiosInstance.get('/songs', {
+                    params: { page, limit }
+                });
+                return {
+                    data: response.data.songs,
+                    pagination: response.data.pagination
+                };
             } catch (error) {
                 if (axios.isAxiosError(error)) {
                     console.error('API Error:', {
@@ -96,8 +56,6 @@ export const api = {
         },
 
         getById: async (id: string): Promise<Song> => {
-            if (!isInitialized) throw new Error('API not initialized');
-            
             try {
                 const response = await axiosInstance.get(`/songs/${id}`);
                 return response.data;
@@ -114,11 +72,20 @@ export const api = {
         },
 
         getStreamUrl: async (trackId: string): Promise<{ url: string; track: { title: string; artist: string; duration: number } }> => {
-            if (!isInitialized) throw new Error('API not initialized');
-            
             try {
-                const response = await axiosInstance.get(`/stream/${trackId}`);
-                return response.data;
+                // Return the direct streaming URL from the VPS
+                const streamUrl = `${VPS_BASE_URL}/stream/${trackId}`;
+                const songResponse = await axiosInstance.get(`/songs/${trackId}`);
+                const song = songResponse.data;
+
+                return {
+                    url: streamUrl,
+                    track: {
+                        title: song.title,
+                        artist: song.artists[0],
+                        duration: song.duration_ms / 1000
+                    }
+                };
             } catch (error) {
                 if (axios.isAxiosError(error)) {
                     console.error('API Error:', {
@@ -135,28 +102,13 @@ export const api = {
     lyrics: {
         getLyrics: async (trackId: string): Promise<LyricsData | null> => {
             try {
-                const url = `${LYRICS_BASE_URL}/${trackId}`;
+                const response = await lyricsAxiosInstance.get(`/lyrics/${trackId}`);
                 
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'text/plain',
-                        'Content-Type': 'text/plain'
-                    }
-                });
-
-                if (response.status === 404) {
+                if (!response.data) {
                     return null;
                 }
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const lrcText = await response.text();
-                if (!lrcText) {
-                    return null;
-                }
+                const lrcText = response.data;
                 
                 // Parse the LRC format
                 const rawLines = lrcText.split('\n')
@@ -189,7 +141,7 @@ export const api = {
                 }
 
                 // Calculate end times using the next line's start time
-                const lines: LyricsLine[] = rawLines.map((line, index) => ({
+                const lines: LyricsLine[] = rawLines.map((line: { startTimeMs: number; words: string }, index: number) => ({
                     startTimeMs: line.startTimeMs,
                     endTimeMs: index < rawLines.length - 1 
                         ? rawLines[index + 1].startTimeMs 
@@ -204,7 +156,7 @@ export const api = {
                 };
 
             } catch (error) {
-                if (error instanceof Error && error.message.includes('404')) {
+                if (axios.isAxiosError(error) && error.response?.status === 404) {
                     return null;
                 }
                 throw error;
@@ -215,14 +167,20 @@ export const api = {
 
 export interface Song {
     track_id: string;
+    spotify_id: string;
     title: string;
     artists: string[];
     album: string;
     duration_ms: number;
-    album_art: string;
-    spotify_url: string;
     explicit: boolean;
-    release_date: string;
+    isrc: string;
+    spotify_url: string;
+    preview_url: string;
+    album_art: string;
+    genres: string[];
+    audio_format: string;
+    added_at: string;
+    popularity: number;
 }
 
 export interface LyricsLine {

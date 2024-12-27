@@ -7,31 +7,55 @@ import { api, Song } from '@/services/api';
 export default function SongsScreen() {
     const [songs, setSongs] = useState<Song[]>([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [hasMore, setHasMore] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
 
     useEffect(() => {
         loadSongs();
     }, []);
 
-    const loadSongs = async () => {
+    const loadSongs = async (refresh: boolean = false) => {
+        if (refresh) {
+            setRefreshing(true);
+            setCurrentPage(1);
+        } else {
+            setLoading(true);
+        }
+
         try {
-            const data = await api.songs.getAll();
-            setSongs(data);
+            const response = await api.songs.getAll(1);
+            setSongs(response.data);
+            setHasMore(currentPage < response.pagination.pages);
         } catch (error) {
             console.error('Error loading songs:', error);
             // TODO: Add error handling UI
         } finally {
             setLoading(false);
+            setRefreshing(false);
         }
     };
 
-    const handleSongPress = async (song: Song) => {
+    const loadMore = async () => {
+        if (loadingMore || !hasMore) return;
+
+        setLoadingMore(true);
         try {
-            const streamData = await api.songs.getStreamUrl(song.track_id);
-            console.log('Stream URL:', streamData.url);
-            // TODO: Implement audio playback
+            const nextPage = currentPage + 1;
+            const response = await api.songs.getAll(nextPage);
+            setSongs(prev => [...prev, ...response.data]);
+            setCurrentPage(nextPage);
+            setHasMore(nextPage < response.pagination.pages);
         } catch (error) {
-            console.error('Error getting stream URL:', error);
+            console.error('Error loading more songs:', error);
+        } finally {
+            setLoadingMore(false);
         }
+    };
+
+    const handleRefresh = () => {
+        loadSongs(true);
     };
 
     if (loading) {
@@ -47,8 +71,18 @@ export default function SongsScreen() {
             <View style={styles.content}>
                 <SongsList
                     songs={songs}
-                    onSongPress={handleSongPress}
                     contentContainerStyle={styles.listContainer}
+                    onEndReached={loadMore}
+                    onEndReachedThreshold={0.5}
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    ListFooterComponent={
+                        loadingMore ? (
+                            <View style={styles.footerLoader}>
+                                <ActivityIndicator color={colors.greenPrimary} />
+                            </View>
+                        ) : null
+                    }
                 />
             </View>
         </View>
@@ -70,5 +104,9 @@ const styles = StyleSheet.create({
     listContainer: {
         paddingHorizontal: 16,
         paddingTop: 16,
+    },
+    footerLoader: {
+        paddingVertical: 16,
+        alignItems: 'center',
     }
 });

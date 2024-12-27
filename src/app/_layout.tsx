@@ -50,8 +50,7 @@ export default function RootLayout() {
                 setIsRetrying(true);
                 setError(null);
 
-                // Initialize API and fetch songs first
-                await api.initialize();
+                // Just fetch songs to verify API connection
                 await api.songs.getAll();
                 
                 setIsReady(true);

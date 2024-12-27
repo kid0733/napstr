@@ -5,18 +5,24 @@ import { Song } from '@/services/api';
 
 interface SongsListProps {
     songs: Song[];
-    onSongPress?: (song: Song) => void;
     ListHeaderComponent?: React.ComponentType<any> | React.ReactElement | null;
     ListFooterComponent?: React.ComponentType<any> | React.ReactElement | null;
     contentContainerStyle?: object;
+    onEndReached?: () => void;
+    onEndReachedThreshold?: number;
+    refreshing?: boolean;
+    onRefresh?: () => void;
 }
 
 export const SongsList: React.FC<SongsListProps> = ({
     songs,
-    onSongPress,
     ListHeaderComponent,
     ListFooterComponent,
     contentContainerStyle,
+    onEndReached,
+    onEndReachedThreshold,
+    refreshing,
+    onRefresh,
 }) => {
     const renderItem: ListRenderItem<Song> = ({ item, index }) => (
         <SongItem 
@@ -37,6 +43,10 @@ export const SongsList: React.FC<SongsListProps> = ({
                 ListFooterComponent={ListFooterComponent}
                 contentContainerStyle={[styles.listContent, contentContainerStyle]}
                 style={styles.list}
+                onEndReached={onEndReached}
+                onEndReachedThreshold={onEndReachedThreshold}
+                refreshing={refreshing}
+                onRefresh={onRefresh}
             />
         </View>
     );
