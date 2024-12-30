@@ -11,6 +11,9 @@ import Animated, {
     withSpring,
     runOnJS
 } from 'react-native-reanimated';
+import { Song } from '@/services/api';
+import { api } from '@/services/api';
+import { SongStorage } from '@/services/storage/SongStorage';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SLIDE_THRESHOLD = 50;
@@ -18,6 +21,7 @@ const SLIDE_THRESHOLD = 50;
 interface SongOptionsProps {
     visible: boolean;
     onClose: () => void;
+    song: Song;
 }
 
 type GestureContext = {
@@ -65,16 +69,18 @@ const SONG_OPTIONS = {
         items: [
             { id: 'view_lyrics', title: 'Lyrics', icon: 'text' },
             { id: 'sound_quality', title: 'Audio Quality', icon: 'options' },
+            { id: 'download', title: 'Download Song', icon: 'download' },
             { id: 'report', title: 'Report Issue', icon: 'alert-circle' },
         ]
     }
 };
 
-export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose }) => {
+export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose, song }) => {
     const translateY = useSharedValue(0);
     const scrollRef = useRef<ScrollView>(null);
     const isScrolledToTop = useSharedValue(true);
     const touchStartY = useRef(0);
+    const songStorage = SongStorage.getInstance();
 
     useEffect(() => {
         if (visible) {
@@ -132,6 +138,20 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose }) =>
         };
     });
 
+    const handleOptionPress = async (optionId: string) => {
+        if (optionId === 'download') {
+            try {
+                const streamData = await api.songs.getStreamUrl(song.track_id);
+                await songStorage.downloadSong(song.track_id, streamData.url);
+                // TODO: Show success toast/notification
+            } catch (error) {
+                console.error('Failed to download song:', error);
+                // TODO: Show error toast/notification
+            }
+        }
+        onClose();
+    };
+
     return (
         <Modal
             visible={visible}
@@ -174,10 +194,7 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose }) =>
                                             <Pressable
                                                 key={option.id}
                                                 style={styles.option}
-                                                onPress={() => {
-                                                    console.log(option.title);
-                                                    onClose();
-                                                }}
+                                                onPress={() => handleOptionPress(option.id)}
                                             >
                                                 <Ionicons 
                                                     name={option.icon as any} 

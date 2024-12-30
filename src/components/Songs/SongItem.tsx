@@ -38,6 +38,7 @@ export const SongItem: React.FC<SongItemProps> = ({ song, allSongs }) => {
             <SongOptions
                 visible={showOptions}
                 onClose={() => setShowOptions(false)}
+                song={song}
             />
             <Pressable 
                 style={[

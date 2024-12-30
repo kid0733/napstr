@@ -224,6 +224,7 @@ export class SongStorage {
 
         console.log('\n=== SongStorage: Getting Song File ===');
         console.log('Track ID:', trackId);
+        console.log('Current metadata size:', this.metadata.size);
         
         const metadata = this.metadata.get(trackId);
         if (!metadata) {
@@ -231,7 +232,15 @@ export class SongStorage {
             return null;
         }
 
+        console.log('Found metadata:', {
+            filePath: metadata.filePath,
+            lastPlayed: new Date(metadata.lastPlayed).toLocaleString(),
+            size: metadata.size
+        });
+
         const fileInfo = await FileSystem.getInfoAsync(metadata.filePath);
+        console.log('File info:', fileInfo);
+        
         if (!fileInfo.exists) {
             console.log('❌ File not found, cleaning up metadata');
             this.metadata.delete(trackId);

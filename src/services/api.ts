@@ -1,20 +1,23 @@
 import axios from 'axios';
 
 // VPS Configuration
-const VPS_BASE_URL = 'https://napstr.uk/api/v1';
+const VPS_BASE_URL = 'https://napstr.uk';
+const API_BASE_URL = `${VPS_BASE_URL}/api/v1`;
+const STREAM_BASE_URL = 'https://music.napstr.uk';
 
 // Add request timeout and better error handling
 const axiosInstance = axios.create({
-    baseURL: VPS_BASE_URL,
-    timeout: 10000,
+    baseURL: API_BASE_URL,
+    timeout: 5000,
     headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
     }
 });
 
 // Create a dedicated instance for lyrics requests with text/plain content type
 const lyricsAxiosInstance = axios.create({
-    baseURL: VPS_BASE_URL,
+    baseURL: API_BASE_URL,
     timeout: 5000,
     headers: {
         'Accept': 'text/plain',
@@ -35,17 +38,20 @@ export interface PaginatedResponse<T> {
 export const api = {
     songs: {
         getAll: async (page: number = 1, limit: number = 20): Promise<PaginatedResponse<Song>> => {
+            const startTime = Date.now();
+            console.log(`[${new Date().toISOString()}] Starting getAll request`);
             try {
                 const response = await axiosInstance.get('/songs', {
                     params: { page, limit }
                 });
+                console.log(`[${new Date().toISOString()}] getAll complete (${Date.now() - startTime}ms)`);
                 return {
                     data: response.data.songs,
                     pagination: response.data.pagination
                 };
             } catch (error) {
                 if (axios.isAxiosError(error)) {
-                    console.error('API Error:', {
+                    console.error(`[${new Date().toISOString()}] API Error (${Date.now() - startTime}ms):`, {
                         message: error.message,
                         status: error.response?.status,
                         data: error.response?.data
@@ -72,12 +78,19 @@ export const api = {
         },
 
         getStreamUrl: async (trackId: string): Promise<{ url: string; track: { title: string; artist: string; duration: number } }> => {
+            const startTime = Date.now();
+            console.log(`[${new Date().toISOString()}] Starting getStreamUrl request for track: ${trackId}`);
             try {
-                // Return the direct streaming URL from the VPS
-                const streamUrl = `${VPS_BASE_URL}/stream/${trackId}`;
+                // Get song details with optimized request
                 const songResponse = await axiosInstance.get(`/songs/${trackId}`);
                 const song = songResponse.data;
-
+                
+                // Use the direct music.napstr.uk URL for streaming
+                const streamUrl = `https://music.napstr.uk/songs/${trackId}.mp3`;
+                
+                console.log(`[${new Date().toISOString()}] Stream URL:`, streamUrl);
+                console.log(`[${new Date().toISOString()}] getStreamUrl complete (${Date.now() - startTime}ms)`);
+                
                 return {
                     url: streamUrl,
                     track: {
@@ -88,10 +101,11 @@ export const api = {
                 };
             } catch (error) {
                 if (axios.isAxiosError(error)) {
-                    console.error('API Error:', {
+                    console.error(`[${new Date().toISOString()}] API Error (${Date.now() - startTime}ms):`, {
                         message: error.message,
                         status: error.response?.status,
-                        data: error.response?.data
+                        data: error.response?.data,
+                        url: error.config?.url
                     });
                 }
                 throw error;

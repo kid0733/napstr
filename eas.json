@@ -3,19 +3,33 @@
     "version": ">= 5.9.1"
   },
   "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "resourceClass": "m-medium",
+        "credentialsSource": "local"
+      }
+    },
+    "development-simulator": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
+      }
+    },
     "preview": {
-      "android": {
-        "buildType": "apk"
+      "distribution": "internal",
+      "ios": {
+        "simulator": true
       }
     },
-    "preview2": {
-      "android": {
-        "gradleCommand": ":app:assembleRelease"
+    "local": {
+      "distribution": "internal",
+      "ios": {
+        "buildConfiguration": "Debug",
+        "credentialsSource": "local"
       }
-    },
-    "preview3": {
-      "developmentClient": true
-    },
-    "production": {}
+    }
   }
 }

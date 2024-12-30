@@ -28,7 +28,7 @@
         <key>CFBundleURLSchemes</key>
         <array>
           <string>napstr</string>
-          <string>com.karki0733.napstr</string>
+          <string>com.siddhant.napstr</string>
         </array>
       </dict>
       <dict>

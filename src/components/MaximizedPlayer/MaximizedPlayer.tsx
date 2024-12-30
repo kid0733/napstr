@@ -1,5 +1,5 @@
 import React, { memo, useState, useCallback, useEffect, useRef } from 'react';
-import { View, Text, Image, StyleSheet, Dimensions, Pressable, ScrollView } from 'react-native';
+import { View, Text, Image, StyleSheet, Dimensions, Pressable, ScrollView, Platform } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
 import { Blur } from '@/components/Blur/Blur';
@@ -23,7 +23,6 @@ import { SongOptions } from '@/components/SongOptions/SongOptions';
 import { Song, LyricsData, LyricsLine } from '@/services/api';
 import { Lyrics } from '@/components/Lyrics/Lyrics';
 import { useLyrics } from '@/contexts/LyricsContext';
-import { LYRICS_BASE_URL } from '@/services/api';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -659,6 +658,23 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                 <SongOptions
                     visible={showOptions}
                     onClose={() => setShowOptions(false)}
+                    song={{
+                        track_id: currentTrack.track_id,
+                        spotify_id: '',  // These fields are required by the Song type
+                        title: currentTrack.title,
+                        artists: [currentTrack.artist],
+                        album: '',
+                        duration_ms: 0,
+                        explicit: false,
+                        isrc: '',
+                        spotify_url: '',
+                        preview_url: '',
+                        album_art: currentTrack.artwork,
+                        genres: [],
+                        audio_format: '',
+                        added_at: '',
+                        popularity: 0
+                    }}
                 />
             </Animated.View>
         </PanGestureHandler>
@@ -672,13 +688,13 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'transparent',
+        backgroundColor: Platform.OS === 'android' && Platform.Version >= 31 ? colors.background : 'transparent',
         zIndex: 1000,
         elevation: 1000,
     },
     content: {
         flex: 1,
-        backgroundColor: 'transparent',
+        backgroundColor: Platform.OS === 'android' && Platform.Version >= 31 ? colors.background : 'transparent',
         paddingTop: SCREEN_HEIGHT * 0.06,
     },
     header: {

@@ -270,7 +270,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         return () => clearInterval(cleanupInterval);
     }, [songStorage]);
 
+    const getStreamUrl = async (trackId: string): Promise<string> => {
+        // Direct URL to the song file
+        return `https://music.napstr.uk/songs/${trackId}.mp3`;
+    };
+
     const playSong: PlaySongFunction = useCallback(async (song: Song, queue?: Song[]) => {
+        const startTime = Date.now();
+        console.log(`[${new Date().toISOString()}] Starting playSong for track: ${song.track_id}`);
+        
         if (loadingRef.current) {
             console.log('Already loading a song, skipping request');
             return;
@@ -280,43 +288,15 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             loadingRef.current = true;
             setIsLoading(true);
 
+            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
+
             if (soundRef.current) {
+                console.log(`[${new Date().toISOString()}] Cleaning up previous sound...`);
                 await cleanupSound(soundRef.current);
                 setSound(undefined);
                 soundRef.current = undefined;
+                console.log(`[${new Date().toISOString()}] Cleanup complete (${Date.now() - startTime}ms)`);
             }
-
-            // First check if we have a cached version
-            let songUri = await songStorage.getSongFile(song.track_id);
-            
-            if (songUri) {
-                // If cached version exists, use it and update last played time
-                console.log('Using cached local file');
-                await songStorage.updateLastPlayed(song.track_id);
-            } else {
-                // If not cached, get stream URL for immediate playback
-                console.log('No cached version found, streaming from URL');
-                const streamData = await api.songs.getStreamUrl(song.track_id);
-                songUri = streamData.url;
-                
-                // Start background download for future use
-                console.log('Starting background download for future use');
-                songStorage.downloadSong(song.track_id, streamData.url)
-                    .catch(error => {
-                        console.error('Background download failed:', error);
-                    });
-            }
-
-            const { sound: newSound } = await Audio.Sound.createAsync(
-                { uri: songUri },
-                { shouldPlay: true },
-                onPlaybackStatusUpdate
-            );
-
-            setSound(newSound);
-            soundRef.current = newSound;
-            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
-            dispatch({ type: 'SET_PLAYING', payload: true });
 
             if (queue) {
                 const newQueue = state.isShuffled ? shuffleArray(queue) : queue;
@@ -332,8 +312,61 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                     dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
                 }
             }
+
+            console.log(`[${new Date().toISOString()}] Starting stream setup...`);
+            
+            // Get stream URL
+            const streamData = await api.songs.getStreamUrl(song.track_id);
+            
+            // Check cache
+            const cachedSong = await songStorage.getSongFile(song.track_id);
+            
+            // Use cached version if available, otherwise use stream URL
+            const songUri = cachedSong || streamData.url;
+            
+            if (cachedSong) {
+                console.log(`[${new Date().toISOString()}] Using cached local file`);
+                await songStorage.updateLastPlayed(song.track_id);
+            } else {
+                console.log(`[${new Date().toISOString()}] Streaming from URL:`, songUri);
+            }
+
+            console.log(`[${new Date().toISOString()}] Creating sound object...`);
+            
+            const { sound: newSound } = await Audio.Sound.createAsync(
+                { 
+                    uri: songUri,
+                    headers: {
+                        'Accept': 'audio/mpeg',
+                        'Range': 'bytes=0-',  // Request full range for proper streaming
+                        'Cache-Control': 'no-cache'  // Let Cloudflare handle caching
+                    }
+                },
+                { 
+                    shouldPlay: true,
+                    progressUpdateIntervalMillis: 100,
+                    androidImplementation: 'MediaPlayer',
+                    shouldCorrectPitch: false,
+                    rate: 1.0,
+                    volume: 1.0,
+                    isMuted: false,
+                    isLooping: false
+                },
+                onPlaybackStatusUpdate
+            );
+            
+            console.log(`[${new Date().toISOString()}] Sound object created (${Date.now() - startTime}ms)`);
+
+            await newSound.playAsync();
+            
+            setSound(newSound);
+            soundRef.current = newSound;
+            dispatch({ type: 'SET_PLAYING', payload: true });
+            
+            console.log(`[${new Date().toISOString()}] PlaySong complete (${Date.now() - startTime}ms)`);
+
         } catch (error) {
-            console.error('Error in playSong:', error);
+            console.error(`[${new Date().toISOString()}] Error in playSong (${Date.now() - startTime}ms):`, error);
             dispatch({ type: 'SET_PLAYING', payload: false });
             if (soundRef.current) {
                 await cleanupSound(soundRef.current);
