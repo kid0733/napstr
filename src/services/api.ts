@@ -37,12 +37,12 @@ export interface PaginatedResponse<T> {
 
 export const api = {
     songs: {
-        getAll: async (page: number = 1, limit: number = 20): Promise<PaginatedResponse<Song>> => {
+        getAll: async (page: number = 1, limit: number = 1000): Promise<PaginatedResponse<Song>> => {
             const startTime = Date.now();
             console.log(`[${new Date().toISOString()}] Starting getAll request`);
             try {
                 const response = await axiosInstance.get('/songs', {
-                    params: { page, limit }
+                    params: { page: 1, limit: 1000 }
                 });
                 console.log(`[${new Date().toISOString()}] getAll complete (${Date.now() - startTime}ms)`);
                 return {

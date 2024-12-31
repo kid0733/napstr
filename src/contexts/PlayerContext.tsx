@@ -1,8 +1,11 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, useReducer } from 'react';
 import { Song } from '@/services/api';
-import { Audio, AVPlaybackStatus } from 'expo-av';
+import { Audio, AVPlaybackStatus, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import { api } from '@/services/api';
 import { SongStorage } from '@/services/storage/SongStorage';
+import { QueueManager } from '@/utils/queueManager';
+import { ShuffleManager } from '@/utils/shuffleManager';
+import { Platform } from 'react-native';
 
 type PlaySongFunction = (song: Song, queue?: Song[]) => Promise<void>;
 type PlayNextFunction = () => Promise<void>;
@@ -140,6 +143,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const lastUpdateTimeRef = useRef(0);
     const handlePlayNextRef = useRef<() => Promise<void>>();
     const songStorage = useMemo(() => SongStorage.getInstance(), []);
+    const queueManager = useMemo(() => new QueueManager(), []);
+    const shuffleManager = useMemo(() => new ShuffleManager(queueManager), [queueManager]);
 
     const shuffleArray = useCallback((array: Song[]) => {
         const newArray = [...array];
@@ -172,60 +177,46 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         if (!status.isLoaded) return;
 
         const now = Date.now();
-        const updateInterval = 250;
+        const updateInterval = 500;
         if (now - lastUpdateTimeRef.current < updateInterval) return;
 
         const newProgress = status.positionMillis / (status.durationMillis || 1);
         const newPosition = status.positionMillis / 1000;
         const newDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
 
-        progressRef.current = newProgress;
-        positionRef.current = newPosition;
-        durationRef.current = newDuration;
+        const hasSignificantChange = 
+            Math.abs(progressRef.current - newProgress) > 0.001 ||
+            Math.abs(positionRef.current - newPosition) > 0.1 ||
+            Math.abs(durationRef.current - newDuration) > 0.1;
 
-        dispatch({ type: 'SET_PROGRESS', payload: newProgress });
-        dispatch({ type: 'SET_POSITION', payload: newPosition });
-        dispatch({ type: 'SET_DURATION', payload: newDuration });
+        if (hasSignificantChange) {
+            progressRef.current = newProgress;
+            positionRef.current = newPosition;
+            durationRef.current = newDuration;
+
+            dispatch({ type: 'SET_PROGRESS', payload: newProgress });
+            dispatch({ type: 'SET_POSITION', payload: newPosition });
+            dispatch({ type: 'SET_DURATION', payload: newDuration });
+        }
 
         lastUpdateTimeRef.current = now;
 
-        // More aggressive song completion detection
         const isNearEnd = status.durationMillis && status.positionMillis >= (status.durationMillis - 200);
-        
-        // Only proceed with auto-next if the song actually finished or is near the end AND is still playing
         if ((status.didJustFinish || isNearEnd) && status.isPlaying) {
-            console.log('Song completion check:', {
-                didJustFinish: status.didJustFinish,
-                isNearEnd,
-                position: status.positionMillis,
-                duration: status.durationMillis,
-                isPlaying: status.isPlaying
-            });
-
             if (state.repeatMode === 'one' && soundRef.current) {
-                console.log('Repeating current song...');
                 soundRef.current.setPositionAsync(0)
                     .then(() => soundRef.current?.playAsync())
-                    .catch(error => {
-                        console.error('Error replaying song:', error);
-                    });
-            } else {
-                console.log('Playing next song...');
-                // Immediately stop current playback
-                if (soundRef.current) {
-                    soundRef.current.stopAsync()
-                        .then(() => {
-                            handlePlayNextRef.current?.().catch(error => {
-                                console.error('Error playing next song:', error);
-                            });
-                        })
-                        .catch(console.error);
-                }
+                    .catch(console.error);
+            } else if (soundRef.current) {
+                soundRef.current.stopAsync()
+                    .then(() => {
+                        handlePlayNextRef.current?.().catch(console.error);
+                    })
+                    .catch(console.error);
             }
         }
     }, [state.repeatMode]);
 
-    // Add a new effect to monitor playback and ensure auto-next works
     useEffect(() => {
         if (!sound || !state.isPlaying) return;
 
@@ -236,7 +227,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
                 const isNearEnd = status.durationMillis && status.positionMillis >= (status.durationMillis - 200);
                 if (isNearEnd || status.didJustFinish) {
-                    console.log('Backup check: Song is near end or finished');
                     if (state.repeatMode === 'one') {
                         await sound.setPositionAsync(0);
                         await sound.playAsync();
@@ -247,7 +237,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             } catch (error) {
                 console.error('Error in playback monitor:', error);
             }
-        }, 500);
+        }, 1000);
 
         return () => clearInterval(checkInterval);
     }, [sound, state.isPlaying, state.repeatMode]);
@@ -258,11 +248,70 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             staysActiveInBackground: true,
             shouldDuckAndroid: true,
             playThroughEarpieceAndroid: false,
+            interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+            interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
         }).catch(console.error);
+
+        if (Platform.OS === 'ios') {
+            Audio.setIsEnabledAsync(true).catch(console.error);
+        }
     }, []);
 
     useEffect(() => {
-        // Run cleanup every hour
+        if (Platform.OS !== 'ios' || !state.currentSong) return;
+
+        const updateNowPlaying = async () => {
+            try {
+                if (!soundRef.current) return;
+
+                await Audio.setAudioModeAsync({
+                    playsInSilentModeIOS: true,
+                    staysActiveInBackground: true,
+                    interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+                });
+
+                const now = Date.now();
+                if (now - lastUpdateTimeRef.current < 1000) return;
+
+                await soundRef.current.setStatusAsync({
+                    progressUpdateIntervalMillis: 500,
+                    shouldPlay: state.isPlaying,
+                    positionMillis: state.position * 1000,
+                    rate: 1.0,
+                    shouldCorrectPitch: true,
+                    volume: 1.0,
+                    isMuted: false,
+                    isLooping: state.repeatMode === 'one',
+                });
+
+                lastUpdateTimeRef.current = now;
+            } catch (error) {
+                console.error('Error updating Now Playing info:', error);
+            }
+        };
+
+        updateNowPlaying();
+    }, [state.currentSong, state.isPlaying, state.position, state.repeatMode]);
+
+    useEffect(() => {
+        if (Platform.OS !== 'ios') return;
+
+        const subscription = Audio.setIsEnabledAsync(true)
+            .then(() => {
+                return Audio.setAudioModeAsync({
+                    playsInSilentModeIOS: true,
+                    staysActiveInBackground: true,
+                    interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
+                });
+            })
+            .catch(console.error);
+
+        return () => {
+            Audio.setIsEnabledAsync(false).catch(console.error);
+        };
+    }, []);
+
+    useEffect(() => {
         const cleanupInterval = setInterval(() => {
             songStorage.cleanupOldSongs(7).catch(console.warn);
         }, 60 * 60 * 1000);
@@ -271,7 +320,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }, [songStorage]);
 
     const getStreamUrl = async (trackId: string): Promise<string> => {
-        // Direct URL to the song file
         return `https://music.napstr.uk/songs/${trackId}.mp3`;
     };
 
@@ -299,29 +347,23 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             }
 
             if (queue) {
-                const newQueue = state.isShuffled ? shuffleArray(queue) : queue;
-                const currentIndex = newQueue.findIndex(s => s.track_id === song.track_id);
+                queueManager.setQueue(queue);
+                const newIndex = queueManager.jumpToSong(song);
                 dispatch({ 
                     type: 'SET_QUEUE', 
                     payload: { 
-                        queue: newQueue,
-                        currentIndex
+                        queue: queueManager.getQueue(),
+                        currentIndex: newIndex
                     }
                 });
-                if (!state.isShuffled) {
-                    dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
-                }
             }
 
             console.log(`[${new Date().toISOString()}] Starting stream setup...`);
             
-            // Get stream URL
             const streamData = await api.songs.getStreamUrl(song.track_id);
             
-            // Check cache
             const cachedSong = await songStorage.getSongFile(song.track_id);
             
-            // Use cached version if available, otherwise use stream URL
             const songUri = cachedSong || streamData.url;
             
             if (cachedSong) {
@@ -338,8 +380,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                     uri: songUri,
                     headers: {
                         'Accept': 'audio/mpeg',
-                        'Range': 'bytes=0-',  // Request full range for proper streaming
-                        'Cache-Control': 'no-cache'  // Let Cloudflare handle caching
+                        'Range': 'bytes=0-',
+                        'Cache-Control': 'no-cache'
                     }
                 },
                 { 
@@ -354,6 +396,20 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                 },
                 onPlaybackStatusUpdate
             );
+
+            if (Platform.OS === 'ios') {
+                await newSound.setStatusAsync({
+                    androidImplementation: 'MediaPlayer',
+                    progressUpdateIntervalMillis: 100,
+                    shouldPlay: true,
+                    rate: 1.0,
+                    shouldCorrectPitch: true,
+                    volume: 1.0,
+                    isMuted: false,
+                    isLooping: state.repeatMode === 'one',
+                    positionMillis: 0,
+                });
+            }
             
             console.log(`[${new Date().toISOString()}] Sound object created (${Date.now() - startTime}ms)`);
 
@@ -377,7 +433,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             loadingRef.current = false;
             setIsLoading(false);
         }
-    }, [state.isShuffled]);
+    }, [state.isShuffled, state.repeatMode]);
 
     const handlePlayNext: PlayNextFunction = useCallback(async () => {
         if (state.queue.length === 0 || state.currentIndex === -1) return;
@@ -507,40 +563,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }, [sound]);
 
     const toggleShuffle = useCallback(() => {
-        const newIsShuffled = !state.isShuffled;
-        dispatch({ type: 'SET_SHUFFLE', payload: newIsShuffled });
-
-        if (newIsShuffled) {
-            // When enabling shuffle, shuffle the current queue from current song onwards
-            const currentSongIndex = state.currentIndex;
-            const beforeCurrentSong = state.queue.slice(0, currentSongIndex + 1);
-            const afterCurrentSong = shuffleArray(state.queue.slice(currentSongIndex + 1));
-            const newQueue = [...beforeCurrentSong, ...afterCurrentSong];
-            
-            dispatch({ 
-                type: 'SET_QUEUE', 
-                payload: { 
-                    queue: newQueue,
-                    currentIndex: currentSongIndex
-                }
-            });
-            if (state.originalQueue.length === 0) {
-                dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: state.queue });
+        const { queue: newQueue, currentIndex: newIndex } = shuffleManager.toggleShuffle();
+        dispatch({ type: 'SET_SHUFFLE', payload: !state.isShuffled });
+        dispatch({ 
+            type: 'SET_QUEUE', 
+            payload: { 
+                queue: newQueue,
+                currentIndex: newIndex
             }
-        } else {
-            // When disabling shuffle, restore the original queue while keeping current song position
-            const currentSongId = state.currentSong?.track_id;
-            const newCurrentIndex = state.originalQueue.findIndex(s => s.track_id === currentSongId);
-            
-            dispatch({ 
-                type: 'SET_QUEUE', 
-                payload: { 
-                    queue: state.originalQueue,
-                    currentIndex: newCurrentIndex >= 0 ? newCurrentIndex : state.currentIndex
-                }
-            });
-        }
-    }, [state.isShuffled, state.queue, state.currentIndex, state.currentSong, state.originalQueue, shuffleArray]);
+        });
+    }, [state.isShuffled, shuffleManager]);
 
     const toggleRepeat = useCallback(() => {
         const modes = ['off', 'all', 'one'] as const;
@@ -556,7 +588,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const seek = useCallback(async (position: number) => {
         if (!sound) return;
         try {
-            await sound.setPositionAsync(position * 1000); // Convert to milliseconds
+            await sound.setPositionAsync(position * 1000);
         } catch (error) {
             console.error('Error seeking:', error);
         }

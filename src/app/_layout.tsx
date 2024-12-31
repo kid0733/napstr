@@ -132,7 +132,6 @@ export default function RootLayout() {
         </GestureHandlerRootView>
     );
 }
-
 const styles = StyleSheet.create<Styles>({
     errorContainer: {
         flex: 1,

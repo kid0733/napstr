@@ -1,16 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { colors } from '@/constants/tokens';
-import { SongsList } from '@/components/Songs';
+import { SongsList } from '@/components/Songs/SongsList';
+import { SortOptionsBar, SortOption } from '@/components/Songs/SortOptionsBar';
 import { api, Song } from '@/services/api';
 
 export default function SongsScreen() {
     const [songs, setSongs] = useState<Song[]>([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [currentPage, setCurrentPage] = useState(1);
-    const [hasMore, setHasMore] = useState(true);
-    const [loadingMore, setLoadingMore] = useState(false);
+    const [sortBy, setSortBy] = useState<SortOption>('songs');
 
     useEffect(() => {
         loadSongs();
@@ -19,43 +18,29 @@ export default function SongsScreen() {
     const loadSongs = async (refresh: boolean = false) => {
         if (refresh) {
             setRefreshing(true);
-            setCurrentPage(1);
         } else {
             setLoading(true);
         }
 
         try {
-            const response = await api.songs.getAll(1);
+            const response = await api.songs.getAll();
+            console.log('Loaded songs:', response.data.length);
             setSongs(response.data);
-            setHasMore(currentPage < response.pagination.pages);
         } catch (error) {
             console.error('Error loading songs:', error);
-            // TODO: Add error handling UI
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
     };
 
-    const loadMore = async () => {
-        if (loadingMore || !hasMore) return;
-
-        setLoadingMore(true);
-        try {
-            const nextPage = currentPage + 1;
-            const response = await api.songs.getAll(nextPage);
-            setSongs(prev => [...prev, ...response.data]);
-            setCurrentPage(nextPage);
-            setHasMore(nextPage < response.pagination.pages);
-        } catch (error) {
-            console.error('Error loading more songs:', error);
-        } finally {
-            setLoadingMore(false);
-        }
-    };
-
     const handleRefresh = () => {
         loadSongs(true);
+    };
+
+    const handleSortChange = (newSort: SortOption) => {
+        console.log('Sorting changed to:', newSort);
+        setSortBy(newSort);
     };
 
     if (loading) {
@@ -69,20 +54,16 @@ export default function SongsScreen() {
     return (
         <View style={styles.container}>
             <View style={styles.content}>
+                <SortOptionsBar
+                    currentSort={sortBy}
+                    onSortChange={handleSortChange}
+                />
                 <SongsList
                     songs={songs}
+                    sortBy={sortBy}
                     contentContainerStyle={styles.listContainer}
-                    onEndReached={loadMore}
-                    onEndReachedThreshold={0.5}
                     refreshing={refreshing}
                     onRefresh={handleRefresh}
-                    ListFooterComponent={
-                        loadingMore ? (
-                            <View style={styles.footerLoader}>
-                                <ActivityIndicator color={colors.greenPrimary} />
-                            </View>
-                        ) : null
-                    }
                 />
             </View>
         </View>
@@ -104,9 +85,5 @@ const styles = StyleSheet.create({
     listContainer: {
         paddingHorizontal: 16,
         paddingTop: 16,
-    },
-    footerLoader: {
-        paddingVertical: 16,
-        alignItems: 'center',
     }
 });

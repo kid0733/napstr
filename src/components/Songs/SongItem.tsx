@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, Image, StyleSheet, Pressable } from 'react-native';
 import { colors } from '@/constants/tokens';
 import { Song } from '@/services/api';
@@ -10,63 +10,98 @@ interface SongItemProps {
     song: Song;
     nextSong?: Song;
     allSongs: Song[];
+    onPress: (song: Song, queue: Song[]) => Promise<void>;
+    onTogglePlay: () => Promise<void>;
+    isCurrentSong: boolean;
+    isPlaying: boolean;
 }
 
-export const SongItem: React.FC<SongItemProps> = ({ song, allSongs }) => {
-    const { title, artists, album_art } = song;
-    const { currentSong, isPlaying, playSong, playPause } = usePlayer();
+// Separate the options modal to prevent re-renders of the main item
+const SongOptionsModal = React.memo(({ visible, onClose, song }: { 
+    visible: boolean; 
+    onClose: () => void; 
+    song: Song; 
+}) => (
+    <SongOptions
+        visible={visible}
+        onClose={onClose}
+        song={song}
+    />
+));
+
+// Convert to a pure component for better performance
+export const SongItem = React.memo(function SongItem({ 
+    song, 
+    allSongs,
+    onPress,
+    onTogglePlay,
+    isCurrentSong,
+    isPlaying
+}: SongItemProps) {
     const [showOptions, setShowOptions] = useState(false);
 
-    const isCurrentSong = currentSong?.track_id === song.track_id;
-
-    async function handlePress() {
+    const handlePress = useCallback(async () => {
         try {
             if (isCurrentSong) {
-                await playPause();
+                await onTogglePlay();
             } else {
                 const songIndex = allSongs.findIndex(s => s.track_id === song.track_id);
                 const queue = allSongs.slice(songIndex);
-                await playSong(song, queue);
+                await onPress(song, queue);
             }
         } catch (error) {
             console.error('Error:', error);
         }
-    }
+    }, [isCurrentSong, onTogglePlay, song, allSongs, onPress]);
+
+    const handleOptionsPress = useCallback((e: any) => {
+        e.stopPropagation();
+        setShowOptions(true);
+    }, []);
+
+    const handleOptionsClose = useCallback(() => {
+        setShowOptions(false);
+    }, []);
+
+    // Memoize styles to prevent recreation
+    const containerStyle = useMemo(() => [
+        styles.container,
+        isCurrentSong && styles.currentSongContainer
+    ], [isCurrentSong]);
+
+    const titleStyle = useMemo(() => [
+        styles.title,
+        isCurrentSong && styles.currentSongText
+    ], [isCurrentSong]);
 
     return (
         <>
-            <SongOptions
+            <SongOptionsModal
                 visible={showOptions}
-                onClose={() => setShowOptions(false)}
+                onClose={handleOptionsClose}
                 song={song}
             />
             <Pressable 
-                style={[
-                    styles.container,
-                    isCurrentSong && styles.currentSongContainer
-                ]}
+                style={containerStyle}
                 onPress={handlePress}
             >
                 <View style={styles.content}>
                     <Image 
-                        source={{ uri: album_art }} 
+                        source={{ uri: song.album_art }} 
                         style={styles.albumArt}
                     />
                     <View style={styles.info}>
                         <Text 
-                            style={[
-                                styles.title,
-                                isCurrentSong && styles.currentSongText
-                            ]}
+                            style={titleStyle}
                             numberOfLines={1}
                         >
-                            {title}
+                            {song.title}
                         </Text>
                         <Text 
                             style={styles.artist}
                             numberOfLines={1}
                         >
-                            {artists.join(', ')}
+                            {song.artists.join(', ')}
                         </Text>
                     </View>
                     {isCurrentSong && (
@@ -80,10 +115,7 @@ export const SongItem: React.FC<SongItemProps> = ({ song, allSongs }) => {
                     )}
                     <Pressable 
                         style={styles.optionsButton}
-                        onPress={(e) => {
-                            e.stopPropagation();
-                            setShowOptions(true);
-                        }}
+                        onPress={handleOptionsPress}
                     >
                         <Ionicons 
                             name="ellipsis-vertical" 
@@ -95,7 +127,7 @@ export const SongItem: React.FC<SongItemProps> = ({ song, allSongs }) => {
             </Pressable>
         </>
     );
-};
+});
 
 const styles = StyleSheet.create({
     container: {

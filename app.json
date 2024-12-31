@@ -20,7 +20,9 @@
         "UIBackgroundModes": [
           "audio"
         ],
-        "NSMotionUsageDescription": "Allow Napstr to access your device motion for interactive UI effects"
+        "NSMotionUsageDescription": "Allow Napstr to access your device motion for interactive UI effects",
+        "NSMicrophoneUsageDescription": "This app does not require microphone access.",
+        "kTCCServiceMediaLibrary": "This app requires access to control media playback."
       }
     },
     "android": {
