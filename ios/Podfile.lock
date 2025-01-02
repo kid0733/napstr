@@ -1568,6 +1568,8 @@ PODS:
     - ReactCommon/turbomodule/bridging
     - ReactCommon/turbomodule/core
     - Yoga
+  - react-native-music-control (1.4.1):
+    - React-Core
   - react-native-safe-area-context (4.12.0):
     - DoubleConversion
     - glog
@@ -2219,6 +2221,7 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - "react-native-blur (from `../node_modules/@react-native-community/blur`)"
+  - react-native-music-control (from `../node_modules/react-native-music-control`)
   - react-native-safe-area-context (from `../node_modules/react-native-safe-area-context`)
   - react-native-track-player (from `../node_modules/react-native-track-player`)
   - React-nativeconfig (from `../node_modules/react-native/ReactCommon`)
@@ -2388,6 +2391,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-blur:
     :path: "../node_modules/@react-native-community/blur"
+  react-native-music-control:
+    :path: "../node_modules/react-native-music-control"
   react-native-safe-area-context:
     :path: "../node_modules/react-native-safe-area-context"
   react-native-track-player:
@@ -2526,6 +2531,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: c174e11bdea12dce07df8669d6c0dc97eb0c7706
   React-microtasksnativemodule: 8a80099ad7391f4e13a48b12796d96680f120dc6
   react-native-blur: 28b0a731ed804bed3e88757c2414305896e6b47e
+  react-native-music-control: 3fc719c179a6562e18af1ac6e30ba9e33b397a31
   react-native-safe-area-context: 458f6b948437afcb59198016b26bbd02ff9c3b47
   react-native-track-player: 82ef1756ffeea61140fea17519ecd6d64ec3cf3e
   React-nativeconfig: f7ab6c152e780b99a8c17448f2d99cf5f69a2311
