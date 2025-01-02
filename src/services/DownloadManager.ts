@@ -32,6 +32,20 @@ export default class DownloadManager {
         return DownloadManager.instance;
     }
 
+    public async waitForInitialization(): Promise<void> {
+        if (this.isInitialized) return;
+        
+        let attempts = 0;
+        while (!this.isInitialized && attempts < 10) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            attempts++;
+        }
+        
+        if (!this.isInitialized) {
+            throw new Error('DownloadManager failed to initialize');
+        }
+    }
+
     private async initialize(): Promise<void> {
         if (this.isInitialized) return;
 
@@ -257,14 +271,26 @@ export default class DownloadManager {
     }
 
     async isDownloaded(songId: string): Promise<boolean> {
-        const downloadInfo = this.downloadedSongs.get(songId);
-        if (!downloadInfo) return false;
-
+        await this.waitForInitialization();
+        
         try {
-            const fileInfo = await FileSystem.getInfoAsync(downloadInfo.localUri);
-            return fileInfo.exists;
+            // Check both the Map and the actual file
+            const isInMap = this.downloadedSongs.has(songId);
+            if (!isInMap) return false;
+
+            const filePath = `${SONGS_DIRECTORY}${songId}.mp3`;
+            const fileInfo = await FileSystem.getInfoAsync(filePath);
+            
+            // If file doesn't exist but is in Map, remove it from Map
+            if (!fileInfo.exists) {
+                this.downloadedSongs.delete(songId);
+                await this.saveDownloadedSongs();
+                return false;
+            }
+
+            return true;
         } catch (error) {
-            console.error('Error checking download status:', error);
+            await this.logToFile(`Error checking download status: ${error}`);
             return false;
         }
     }

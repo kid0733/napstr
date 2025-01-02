@@ -8,6 +8,7 @@ import { ShuffleManager } from '@/utils/shuffleManager';
 import { Platform } from 'react-native';
 import DownloadManager from '@/services/DownloadManager';
 
+
 type PlaySongFunction = (song: Song, queue?: Song[]) => Promise<void>;
 type PlayNextFunction = () => Promise<void>;
 type PlayPreviousFunction = () => Promise<void>;

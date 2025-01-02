@@ -43,15 +43,37 @@ export const SongItem = React.memo(function SongItem({
     const [isDownloaded, setIsDownloaded] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
 
+    // Check download status on mount and when song changes
     React.useEffect(() => {
-        checkDownloadStatus();
-    }, [song]);
+        let mounted = true;
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        const check = async () => {
+            try {
+                const downloadManager = DownloadManager.getInstance();
+                await downloadManager.waitForInitialization();
+                
+                const downloaded = await downloadManager.isDownloaded(song.track_id);
+                if (mounted) {
+                    setIsDownloaded(downloaded);
+                }
+            } catch (error) {
+                console.error('Error checking download status:', error);
+                // Retry a few times if it fails
+                if (retryCount < maxRetries && mounted) {
+                    retryCount++;
+                    setTimeout(check, 1000); // Wait 1 second before retrying
+                }
+            }
+        };
 
-    const checkDownloadStatus = async () => {
-        const downloadManager = DownloadManager.getInstance();
-        const downloaded = await downloadManager.isDownloaded(song.track_id);
-        setIsDownloaded(downloaded);
-    };
+        check();
+        
+        return () => {
+            mounted = false;
+        };
+    }, [song.track_id]);
 
     const handleDownload = async () => {
         if (isDownloaded || isDownloading) return;
