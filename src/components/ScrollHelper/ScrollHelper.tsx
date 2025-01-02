@@ -1,5 +1,5 @@
 import React, { useRef, useCallback } from 'react';
-import { StyleSheet, View, PanResponder } from 'react-native';
+import { StyleSheet, View, PanResponder, ViewStyle } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { colors } from '@/constants/tokens';
 import Animated, {
@@ -42,9 +42,10 @@ const REVERT_SPRING_CONFIG = {
 
 interface ScrollHelperProps<T> {
   scrollRef: React.RefObject<FlashList<T>>;
+  style?: ViewStyle;
 }
 
-export function ScrollHelper<T>({ scrollRef }: ScrollHelperProps<T>) {
+export function ScrollHelper<T>({ scrollRef, style }: ScrollHelperProps<T>) {
   const displacement = useSharedValue(0);
   const scale = useSharedValue(1);
   const isMoving = useSharedValue(0);
@@ -206,7 +207,7 @@ export function ScrollHelper<T>({ scrollRef }: ScrollHelperProps<T>) {
   });
 
   return (
-    <View style={styles.container} pointerEvents="box-none">
+    <View style={[styles.container, style]} pointerEvents="box-none">
       <Animated.View
         style={[styles.helper, helperStyle]}
         {...panResponder.panHandlers}

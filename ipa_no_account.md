@@ -18,6 +18,15 @@ Here's the rundown of how we created the IPA without a developer account:
    - Cleaned up by removing the `Payload` directory
 
 The key commands were:
+
+```
+cd ios && xcodebuild -workspace napstr.xcworkspace -scheme napstr -configuration Release -archivePath napstr.xcarchive archive CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO ENABLE_USER_SCRIPT_SANDBOXING=NO ARCHS="arm64" ONLY_ACTIVE_ARCH=NO
+
+```
+
+
+
+
 ```bash
 mkdir -p Payload
 cp -r napstr.xcarchive/Products/Applications/napstr.app Payload/

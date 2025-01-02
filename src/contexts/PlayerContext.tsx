@@ -6,6 +6,7 @@ import { SongStorage } from '@/services/storage/SongStorage';
 import { QueueManager } from '@/utils/queueManager';
 import { ShuffleManager } from '@/utils/shuffleManager';
 import { Platform } from 'react-native';
+import DownloadManager from '@/services/DownloadManager';
 
 type PlaySongFunction = (song: Song, queue?: Song[]) => Promise<void>;
 type PlayNextFunction = () => Promise<void>;
@@ -173,11 +174,81 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
+    useEffect(() => {
+        const setupAudio = async () => {
+            try {
+                await Audio.setAudioModeAsync({
+                    playsInSilentModeIOS: true,
+                    staysActiveInBackground: true,
+                    shouldDuckAndroid: true,
+                    playThroughEarpieceAndroid: false,
+                    interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+                    interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+                });
+
+                if (Platform.OS === 'ios') {
+                    await Audio.setIsEnabledAsync(true);
+                }
+            } catch (error) {
+                console.error('Error setting up audio:', error);
+            }
+        };
+
+        setupAudio();
+    }, []);
+
+    // Add background playback monitor
+    useEffect(() => {
+        if (!sound || !state.isPlaying) return;
+
+        let lastPosition = 0;
+        let stuckCount = 0;
+        const maxStuckCount = 3;
+
+        const monitorInterval = setInterval(async () => {
+            try {
+                const status = await sound.getStatusAsync();
+                if (!status.isLoaded) return;
+
+                const currentPosition = status.positionMillis;
+                const isStuck = Math.abs(currentPosition - lastPosition) < 100; // Less than 100ms progress
+                
+                if (isStuck) {
+                    stuckCount++;
+                } else {
+                    stuckCount = 0;
+                }
+
+                // If position is stuck for several checks, or we're very close to the end
+                const isNearEnd = status.durationMillis && currentPosition >= (status.durationMillis - 500);
+                if (isNearEnd || (stuckCount >= maxStuckCount && currentPosition > 0)) {
+                    console.log('Background monitor: Track appears to be finished');
+                    stuckCount = 0;
+                    
+                    if (state.repeatMode === 'one') {
+                        await sound.setPositionAsync(0);
+                        await sound.playAsync();
+                    } else {
+                        await sound.stopAsync();
+                        handlePlayNextRef.current?.();
+                    }
+                }
+
+                lastPosition = currentPosition;
+            } catch (error) {
+                console.error('Error in background monitor:', error);
+            }
+        }, 1000);
+
+        return () => clearInterval(monitorInterval);
+    }, [sound, state.isPlaying, state.repeatMode]);
+
+    // Keep existing onPlaybackStatusUpdate but make it more aggressive
     const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
         if (!status.isLoaded) return;
 
         const now = Date.now();
-        const updateInterval = 500;
+        const updateInterval = 250; // More frequent updates
         if (now - lastUpdateTimeRef.current < updateInterval) return;
 
         const newProgress = status.positionMillis / (status.durationMillis || 1);
@@ -201,7 +272,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
         lastUpdateTimeRef.current = now;
 
-        const isNearEnd = status.durationMillis && status.positionMillis >= (status.durationMillis - 200);
+        // More aggressive end detection
+        const isNearEnd = status.durationMillis && status.positionMillis >= (status.durationMillis - 500);
         if ((status.didJustFinish || isNearEnd) && status.isPlaying) {
             if (state.repeatMode === 'one' && soundRef.current) {
                 soundRef.current.setPositionAsync(0)
@@ -217,223 +289,83 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, [state.repeatMode]);
 
-    useEffect(() => {
-        if (!sound || !state.isPlaying) return;
-
-        const checkInterval = setInterval(async () => {
-            try {
-                const status = await sound.getStatusAsync();
-                if (!status.isLoaded) return;
-
-                const isNearEnd = status.durationMillis && status.positionMillis >= (status.durationMillis - 200);
-                if (isNearEnd || status.didJustFinish) {
-                    if (state.repeatMode === 'one') {
-                        await sound.setPositionAsync(0);
-                        await sound.playAsync();
-                    } else {
-                        handlePlayNextRef.current?.();
-                    }
-                }
-            } catch (error) {
-                console.error('Error in playback monitor:', error);
-            }
-        }, 1000);
-
-        return () => clearInterval(checkInterval);
-    }, [sound, state.isPlaying, state.repeatMode]);
-
-    useEffect(() => {
-        Audio.setAudioModeAsync({
-            playsInSilentModeIOS: true,
-            staysActiveInBackground: true,
-            shouldDuckAndroid: true,
-            playThroughEarpieceAndroid: false,
-            interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-            interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
-        }).catch(console.error);
-
-        if (Platform.OS === 'ios') {
-            Audio.setIsEnabledAsync(true).catch(console.error);
-        }
-    }, []);
-
-    useEffect(() => {
-        if (Platform.OS !== 'ios' || !state.currentSong) return;
-
-        const updateNowPlaying = async () => {
-            try {
-                if (!soundRef.current) return;
-
-                await Audio.setAudioModeAsync({
-                    playsInSilentModeIOS: true,
-                    staysActiveInBackground: true,
-                    interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-                });
-
-                const now = Date.now();
-                if (now - lastUpdateTimeRef.current < 1000) return;
-
-                await soundRef.current.setStatusAsync({
-                    progressUpdateIntervalMillis: 500,
-                    shouldPlay: state.isPlaying,
-                    positionMillis: state.position * 1000,
-                    rate: 1.0,
-                    shouldCorrectPitch: true,
-                    volume: 1.0,
-                    isMuted: false,
-                    isLooping: state.repeatMode === 'one',
-                });
-
-                lastUpdateTimeRef.current = now;
-            } catch (error) {
-                console.error('Error updating Now Playing info:', error);
-            }
-        };
-
-        updateNowPlaying();
-    }, [state.currentSong, state.isPlaying, state.position, state.repeatMode]);
-
-    useEffect(() => {
-        if (Platform.OS !== 'ios') return;
-
-        const subscription = Audio.setIsEnabledAsync(true)
-            .then(() => {
-                return Audio.setAudioModeAsync({
-                    playsInSilentModeIOS: true,
-                    staysActiveInBackground: true,
-                    interruptionModeIOS: InterruptionModeIOS.MixWithOthers,
-                });
-            })
-            .catch(console.error);
-
-        return () => {
-            Audio.setIsEnabledAsync(false).catch(console.error);
-        };
-    }, []);
-
-    useEffect(() => {
-        const cleanupInterval = setInterval(() => {
-            songStorage.cleanupOldSongs(7).catch(console.warn);
-        }, 60 * 60 * 1000);
-
-        return () => clearInterval(cleanupInterval);
-    }, [songStorage]);
-
-    const getStreamUrl = async (trackId: string): Promise<string> => {
-        return `https://music.napstr.uk/songs/${trackId}.mp3`;
-    };
-
-    const playSong: PlaySongFunction = useCallback(async (song: Song, queue?: Song[]) => {
-        const startTime = Date.now();
-        console.log(`[${new Date().toISOString()}] Starting playSong for track: ${song.track_id}`);
+    const playSong = useCallback<PlaySongFunction>(async (song, queue) => {
+        if (loadingRef.current || !song) return;
         
-        if (loadingRef.current) {
-            console.log('Already loading a song, skipping request');
-            return;
-        }
-
         try {
             loadingRef.current = true;
             setIsLoading(true);
 
-            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
-
+            // Clean up existing sound
             if (soundRef.current) {
-                console.log(`[${new Date().toISOString()}] Cleaning up previous sound...`);
                 await cleanupSound(soundRef.current);
-                setSound(undefined);
-                soundRef.current = undefined;
-                console.log(`[${new Date().toISOString()}] Cleanup complete (${Date.now() - startTime}ms)`);
             }
 
-            if (queue) {
-                queueManager.setQueue(queue);
-                const newIndex = queueManager.jumpToSong(song);
-                dispatch({ 
-                    type: 'SET_QUEUE', 
-                    payload: { 
-                        queue: queueManager.getQueue(),
-                        currentIndex: newIndex
-                    }
-                });
-            }
-
-            console.log(`[${new Date().toISOString()}] Starting stream setup...`);
+            // Check for downloaded file first
+            const downloadManager = DownloadManager.getInstance();
+            const localUri = await downloadManager.getLocalUri(song.track_id);
             
-            const streamData = await api.songs.getStreamUrl(song.track_id);
+            let audioUri: string;
             
-            const cachedSong = await songStorage.getSongFile(song.track_id);
-            
-            const songUri = cachedSong || streamData.url;
-            
-            if (cachedSong) {
-                console.log(`[${new Date().toISOString()}] Using cached local file`);
-                await songStorage.updateLastPlayed(song.track_id);
+            if (localUri) {
+                console.log('Using downloaded file:', localUri);
+                await downloadManager.appendToLog(`Playing downloaded file for: ${song.track_id}`);
+                audioUri = localUri;
             } else {
-                console.log(`[${new Date().toISOString()}] Streaming from URL:`, songUri);
+                console.log('No local file found, streaming:', song.track_id);
+                await downloadManager.appendToLog(`Streaming file: ${song.track_id}`);
+                const streamData = await api.songs.getStreamUrl(song.track_id);
+                audioUri = streamData.url;
             }
 
-            console.log(`[${new Date().toISOString()}] Creating sound object...`);
-            
+            // Load the song with optimized settings for background playback
             const { sound: newSound } = await Audio.Sound.createAsync(
-                { 
-                    uri: songUri,
-                    headers: {
-                        'Accept': 'audio/mpeg',
-                        'Range': 'bytes=0-',
-                        'Cache-Control': 'no-cache'
-                    }
-                },
+                { uri: audioUri },
                 { 
                     shouldPlay: true,
-                    progressUpdateIntervalMillis: 100,
-                    androidImplementation: 'MediaPlayer',
-                    shouldCorrectPitch: false,
-                    rate: 1.0,
-                    volume: 1.0,
-                    isMuted: false,
-                    isLooping: false
-                },
-                onPlaybackStatusUpdate
-            );
-
-            if (Platform.OS === 'ios') {
-                await newSound.setStatusAsync({
-                    androidImplementation: 'MediaPlayer',
-                    progressUpdateIntervalMillis: 100,
-                    shouldPlay: true,
+                    progressUpdateIntervalMillis: 500,
+                    positionMillis: 0,
                     rate: 1.0,
                     shouldCorrectPitch: true,
                     volume: 1.0,
                     isMuted: false,
                     isLooping: state.repeatMode === 'one',
-                    positionMillis: 0,
-                });
-            }
-            
-            console.log(`[${new Date().toISOString()}] Sound object created (${Date.now() - startTime}ms)`);
+                },
+                onPlaybackStatusUpdate
+            );
 
-            await newSound.playAsync();
-            
-            setSound(newSound);
             soundRef.current = newSound;
+            setSound(newSound);
+            
+            // Update state
+            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
             dispatch({ type: 'SET_PLAYING', payload: true });
             
-            console.log(`[${new Date().toISOString()}] PlaySong complete (${Date.now() - startTime}ms)`);
-
-        } catch (error) {
-            console.error(`[${new Date().toISOString()}] Error in playSong (${Date.now() - startTime}ms):`, error);
-            dispatch({ type: 'SET_PLAYING', payload: false });
-            if (soundRef.current) {
-                await cleanupSound(soundRef.current);
-                setSound(undefined);
-                soundRef.current = undefined;
+            if (queue) {
+                const newQueue = state.isShuffled ? shuffleArray(queue) : queue;
+                const currentIndex = newQueue.findIndex(s => s.track_id === song.track_id);
+                
+                dispatch({ 
+                    type: 'SET_QUEUE', 
+                    payload: { 
+                        queue: newQueue,
+                        currentIndex: currentIndex 
+                    } 
+                });
+                
+                if (!state.isShuffled) {
+                    dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
+                }
             }
+        } catch (error) {
+            console.error('Error playing song:', error);
+            const downloadManager = DownloadManager.getInstance();
+            await downloadManager.appendToLog(`Error playing song ${song.track_id}: ${error}`);
         } finally {
             loadingRef.current = false;
             setIsLoading(false);
         }
-    }, [state.isShuffled, state.repeatMode]);
+    }, [state.isShuffled, state.repeatMode, cleanupSound, shuffleArray]);
 
     const handlePlayNext: PlayNextFunction = useCallback(async () => {
         if (state.queue.length === 0 || state.currentIndex === -1) return;
@@ -456,10 +388,57 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
             let nextIndex = state.currentIndex + 1;
             
+            // Check if we need to extend the queue
+            if (state.isShuffled) {
+                const queueExtension = shuffleManager.extendQueueIfNeeded();
+                if (queueExtension) {
+                    console.log('Extending queue with new shuffled tracks');
+                    dispatch({ 
+                        type: 'SET_QUEUE', 
+                        payload: { 
+                            queue: queueExtension.queue,
+                            currentIndex: queueExtension.currentIndex
+                        }
+                    });
+                }
+            }
+            
+            // Handle reaching the end of the queue
             if (nextIndex >= state.queue.length) {
                 if (state.repeatMode === 'all') {
-                    nextIndex = 0;
+                    console.log('Reached end of queue, repeating from start');
+                    if (state.isShuffled) {
+                        // Reshuffle the queue when repeating in shuffle mode
+                        const { queue: newQueue } = shuffleManager.shuffleAll();
+                        dispatch({ 
+                            type: 'SET_QUEUE', 
+                            payload: { 
+                                queue: newQueue,
+                                currentIndex: 0
+                            }
+                        });
+                        nextIndex = 0;
+                    } else {
+                        // Just start from beginning for normal repeat
+                        nextIndex = 0;
+                    }
+                } else if (state.isShuffled) {
+                    // Try to extend the queue one last time for shuffle mode
+                    const queueExtension = shuffleManager.extendQueueIfNeeded();
+                    if (queueExtension) {
+                        console.log('Extending queue at the end with new shuffled tracks');
+                        dispatch({ 
+                            type: 'SET_QUEUE', 
+                            payload: queueExtension
+                        });
+                        nextIndex = queueExtension.currentIndex;
+                    } else {
+                        console.log('Reached end of queue, stopping playback');
+                        dispatch({ type: 'SET_PLAYING', payload: false });
+                        return;
+                    }
                 } else {
+                    console.log('Reached end of queue, stopping playback');
                     dispatch({ type: 'SET_PLAYING', payload: false });
                     return;
                 }
@@ -480,7 +459,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         } finally {
             isPlayingNextRef.current = false;
         }
-    }, [state.queue, state.currentIndex, state.repeatMode, cleanupSound, playSong]);
+    }, [state.queue, state.currentIndex, state.repeatMode, state.isShuffled, cleanupSound, playSong, shuffleManager]);
 
     useEffect(() => {
         handlePlayNextRef.current = handlePlayNext;

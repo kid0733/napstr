@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { View, Text, Image, StyleSheet, Pressable } from 'react-native';
+import { View, Text, Image, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
 import { colors } from '@/constants/tokens';
 import { Song } from '@/services/api';
 import { Ionicons } from '@expo/vector-icons';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { SongOptions } from '@/components/SongOptions/SongOptions';
+import DownloadManager from '@/services/DownloadManager';
 
 interface SongItemProps {
     song: Song;
@@ -39,6 +40,30 @@ export const SongItem = React.memo(function SongItem({
     isPlaying
 }: SongItemProps) {
     const [showOptions, setShowOptions] = useState(false);
+    const [isDownloaded, setIsDownloaded] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
+
+    React.useEffect(() => {
+        checkDownloadStatus();
+    }, [song]);
+
+    const checkDownloadStatus = async () => {
+        const downloadManager = DownloadManager.getInstance();
+        const downloaded = await downloadManager.isDownloaded(song.track_id);
+        setIsDownloaded(downloaded);
+    };
+
+    const handleDownload = async () => {
+        if (isDownloaded || isDownloading) return;
+        
+        setIsDownloading(true);
+        const downloadManager = DownloadManager.getInstance();
+        const success = await downloadManager.downloadSong(song);
+        setIsDownloading(false);
+        if (success) {
+            setIsDownloaded(true);
+        }
+    };
 
     const handlePress = useCallback(async () => {
         try {
@@ -123,6 +148,17 @@ export const SongItem = React.memo(function SongItem({
                             color={colors.greenTertiary}
                         />
                     </Pressable>
+                    <TouchableOpacity 
+                        onPress={handleDownload}
+                        disabled={isDownloaded || isDownloading}
+                        style={styles.downloadButton}
+                    >
+                        <Ionicons 
+                            name={isDownloaded ? "checkmark-circle" : isDownloading ? "cloud-download" : "download-outline"} 
+                            size={24} 
+                            color={isDownloaded ? colors.greenPrimary : colors.text} 
+                        />
+                    </TouchableOpacity>
                 </View>
             </Pressable>
         </>
@@ -175,4 +211,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
+    downloadButton: {
+        padding: 4,
+    }
 }); 

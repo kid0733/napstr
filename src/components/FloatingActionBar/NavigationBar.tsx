@@ -8,13 +8,15 @@ const navigationConfig = {
         '/(tabs)/(songs)',
         '/(tabs)/favourites',
         '/(tabs)/playlists',
-        '/(tabs)/artists'
+        '/(tabs)/artists',
+        '/(tabs)/(debug)'
     ] as const,
     items: [
         { icon: 'musical-notes', activeColor: colors.greenQuaternary, color: 'rgba(255,255,255,0.8)', activeBackgroundColor: colors.greenTertiary },
         { icon: 'heart', activeColor: colors.greenQuaternary, color: 'rgba(255,255,255,0.8)', activeBackgroundColor: colors.greenTertiary },
         { icon: 'list', activeColor: colors.greenQuaternary, color: 'rgba(255,255,255,0.8)', activeBackgroundColor: colors.greenTertiary },
         { icon: 'people', activeColor: colors.greenQuaternary, color: 'rgba(255,255,255,0.8)', activeBackgroundColor: colors.greenTertiary },
+        { icon: 'bug', activeColor: colors.greenQuaternary, color: 'rgba(255,255,255,0.8)', activeBackgroundColor: colors.greenTertiary },
     ]
 }
 

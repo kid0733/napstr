@@ -9,6 +9,8 @@ import { PlayerProvider } from '@/contexts/PlayerContext'
 import { LyricsProvider } from '@/contexts/LyricsContext'
 import { SplashOverlay } from '@/components/SplashOverlay/SplashOverlay'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { Tabs } from 'expo-router'
+import { Ionicons } from '@expo/vector-icons'
 
 // Define static assets
 const STATIC_ASSETS = {

@@ -6,7 +6,7 @@ import { SongItem } from './SongItem';
 import { colors } from '@/constants/tokens';
 import { SortOption } from './SortOptionsBar';
 import { usePlayer } from '@/contexts/PlayerContext';
-import { ScrollHelper } from '../ScrollHelper/ScrollHelper';
+import { AlphabeticalIndex } from './AlphabeticalIndex';
 
 const ITEM_HEIGHT = 60;
 const ITEM_MARGIN = 4;
@@ -226,6 +226,12 @@ export const SongsList: React.FC<SongsListProps> = ({
         return typeof item === 'string' ? 'sectionHeader' : 'song';
     }, []);
 
+    const listContentStyle = useMemo(() => ({
+        ...styles.listContent,
+        paddingRight: sortBy === 'songs' ? 24 : 16,
+        ...(contentContainerStyle || {})
+    }), [sortBy, contentContainerStyle]);
+
     return (
         <View style={styles.container}>
             <FlashList
@@ -236,13 +242,19 @@ export const SongsList: React.FC<SongsListProps> = ({
                 getItemType={getItemType}
                 stickyHeaderIndices={stickyHeaderIndices}
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={contentContainerStyle ? { ...styles.listContent, ...contentContainerStyle } : styles.listContent}
+                contentContainerStyle={listContentStyle}
                 refreshing={refreshing}
                 onRefresh={onRefresh}
                 estimatedFirstItemOffset={0}
                 drawDistance={TOTAL_ITEM_HEIGHT * 10}
             />
-            <ScrollHelper<ListItem> scrollRef={listRef} />
+            {sortBy === 'songs' && (
+                <AlphabeticalIndex 
+                    listRef={listRef}
+                    stickyHeaderIndices={stickyHeaderIndices}
+                    data={flatData}
+                />
+            )}
         </View>
     );
 };
@@ -251,12 +263,15 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
-        height: '100%',
-        width: '100%'
+        height: '80%',
+        width: '100%',
+        position: 'relative',
+        marginTop: 0,
+        alignSelf: 'flex-start'
     },
     listContent: {
         paddingBottom: 70,
-        paddingHorizontal: 16
+        paddingHorizontal: 16,
     } as ContentStyle,
     sectionHeader: {
         backgroundColor: colors.background,
@@ -275,7 +290,7 @@ const styles = StyleSheet.create({
     songItemContainer: {
         height: ITEM_HEIGHT,
         paddingHorizontal: 0,
-        marginRight: 16,
+        marginRight: 8,
         marginVertical: ITEM_MARGIN,
     }
 }); 

@@ -19,6 +19,8 @@ export default function TabsLayout() {
         currentTitle = 'Playlists'
     } else if (pathname?.includes('/artists')) {
         currentTitle = 'Artists'
+    } else if (pathname?.includes('/(debug)')) {
+        currentTitle = 'Debug'
     }
 
     return (
@@ -65,6 +67,12 @@ export default function TabsLayout() {
                             title: 'Favourites',
                         }}
                     />
+                    <Tabs.Screen
+                        name="(debug)"
+                        options={{
+                            title: 'Debug',
+                        }}
+                    />
                 </Tabs>
             </View>
 
@@ -73,7 +81,6 @@ export default function TabsLayout() {
         </SafeAreaView>
     )
 }
-
 const layoutStyles = StyleSheet.create({
     container: {
         flex: 1,
@@ -99,3 +106,4 @@ const layoutStyles = StyleSheet.create({
         paddingBottom:10
     },
 });
+
