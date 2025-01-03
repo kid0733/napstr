@@ -1,13 +1,13 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, useReducer } from 'react';
 import { Song } from '@/services/api';
-import { Audio, AVPlaybackStatus, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
+import TrackPlayer, { Event, State, useTrackPlayerEvents } from 'react-native-track-player';
 import { api } from '@/services/api';
 import { SongStorage } from '@/services/storage/SongStorage';
 import { QueueManager } from '@/utils/queueManager';
 import { ShuffleManager } from '@/utils/shuffleManager';
 import { Platform } from 'react-native';
 import DownloadManager from '@/services/DownloadManager';
-
+import { setupTrackPlayer } from '@/services/trackPlayerSetup';
 
 type PlaySongFunction = (song: Song, queue?: Song[]) => Promise<void>;
 type PlayNextFunction = () => Promise<void>;
@@ -120,11 +120,6 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
 }
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
-    const [sound, setSound] = useState<Audio.Sound>();
-    const soundRef = useRef<Audio.Sound>();
-    const isPlayingNextRef = useRef(false);
-    const isPlayingPreviousRef = useRef(false);
-
     const [state, dispatch] = useReducer(playerReducer, {
         currentSong: null,
         isPlaying: false,
@@ -141,474 +136,103 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
     const [isLoading, setIsLoading] = useState(false);
     const loadingRef = useRef(false);
-    const progressRef = useRef(state.progress);
-    const positionRef = useRef(state.position);
-    const durationRef = useRef(state.duration);
-    const lastUpdateTimeRef = useRef(0);
-    const handlePlayNextRef = useRef<() => Promise<void>>();
     const songStorage = useMemo(() => SongStorage.getInstance(), []);
     const queueManager = useMemo(() => new QueueManager(), []);
     const shuffleManager = useMemo(() => new ShuffleManager(queueManager), [queueManager]);
 
-    const shuffleArray = useCallback((array: Song[]) => {
-        const newArray = [...array];
-        for (let i = newArray.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-        }
-        return newArray;
-    }, []);
-
-    const cleanupSound = useCallback(async (soundToCleanup?: Audio.Sound) => {
-        if (!soundToCleanup) return;
-        
-        try {
-            console.log('Starting sound cleanup...');
-            const status = await soundToCleanup.getStatusAsync();
-            if (status.isLoaded) {
-                console.log('Sound is loaded, stopping...');
-                await soundToCleanup.stopAsync();
-                console.log('Sound stopped, unloading...');
-                await soundToCleanup.unloadAsync();
-                console.log('Sound cleanup completed successfully');
-            }
-        } catch (error) {
-            console.error('Error cleaning up sound:', error);
-        }
-    }, []);
-
+    // Initialize TrackPlayer
     useEffect(() => {
-        const setupAudio = async () => {
-            try {
-                await Audio.setAudioModeAsync({
-                    playsInSilentModeIOS: true,
-                    staysActiveInBackground: true,
-                    shouldDuckAndroid: true,
-                    playThroughEarpieceAndroid: false,
-                    interruptionModeIOS: InterruptionModeIOS.DuckOthers,
-                    interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
-                });
-
-                if (Platform.OS === 'ios') {
-                    await Audio.setIsEnabledAsync(true);
-                }
-            } catch (error) {
-                console.error('Error setting up audio:', error);
-            }
-        };
-
-        setupAudio();
+        setupTrackPlayer();
     }, []);
 
-    // Add background playback monitor
-    useEffect(() => {
-        if (!sound || !state.isPlaying) return;
-
-        let lastPosition = 0;
-        let stuckCount = 0;
-        const maxStuckCount = 3;
-
-        const monitorInterval = setInterval(async () => {
-            try {
-                const status = await sound.getStatusAsync();
-                if (!status.isLoaded) return;
-
-                const currentPosition = status.positionMillis;
-                const isStuck = Math.abs(currentPosition - lastPosition) < 100; // Less than 100ms progress
-                
-                if (isStuck) {
-                    stuckCount++;
-                } else {
-                    stuckCount = 0;
-                }
-
-                // If position is stuck for several checks, or we're very close to the end
-                const isNearEnd = status.durationMillis && currentPosition >= (status.durationMillis - 500);
-                if (isNearEnd || (stuckCount >= maxStuckCount && currentPosition > 0)) {
-                    console.log('Background monitor: Track appears to be finished');
-                    stuckCount = 0;
-                    
-                    if (state.repeatMode === 'one') {
-                        await sound.setPositionAsync(0);
-                        await sound.playAsync();
-                    } else {
-                        await sound.stopAsync();
-                        handlePlayNextRef.current?.();
-                    }
-                }
-
-                lastPosition = currentPosition;
-            } catch (error) {
-                console.error('Error in background monitor:', error);
-            }
-        }, 1000);
-
-        return () => clearInterval(monitorInterval);
-    }, [sound, state.isPlaying, state.repeatMode]);
-
-    // Keep existing onPlaybackStatusUpdate but make it more aggressive
-    const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
-        if (!status.isLoaded) return;
-
-        const now = Date.now();
-        const updateInterval = 250; // More frequent updates
-        if (now - lastUpdateTimeRef.current < updateInterval) return;
-
-        const newProgress = status.positionMillis / (status.durationMillis || 1);
-        const newPosition = status.positionMillis / 1000;
-        const newDuration = status.durationMillis ? status.durationMillis / 1000 : 0;
-
-        const hasSignificantChange = 
-            Math.abs(progressRef.current - newProgress) > 0.001 ||
-            Math.abs(positionRef.current - newPosition) > 0.1 ||
-            Math.abs(durationRef.current - newDuration) > 0.1;
-
-        if (hasSignificantChange) {
-            progressRef.current = newProgress;
-            positionRef.current = newPosition;
-            durationRef.current = newDuration;
-
-            dispatch({ type: 'SET_PROGRESS', payload: newProgress });
-            dispatch({ type: 'SET_POSITION', payload: newPosition });
-            dispatch({ type: 'SET_DURATION', payload: newDuration });
+    // Track Player Events
+    useTrackPlayerEvents([Event.PlaybackState, Event.PlaybackError], async (event) => {
+        if (event.type === Event.PlaybackState) {
+            const playerState = await TrackPlayer.getState();
+            dispatch({ type: 'SET_PLAYING', payload: playerState === State.Playing });
         }
-
-        lastUpdateTimeRef.current = now;
-
-        // More aggressive end detection
-        const isNearEnd = status.durationMillis && status.positionMillis >= (status.durationMillis - 500);
-        if ((status.didJustFinish || isNearEnd) && status.isPlaying) {
-            if (state.repeatMode === 'one' && soundRef.current) {
-                soundRef.current.setPositionAsync(0)
-                    .then(() => soundRef.current?.playAsync())
-                    .catch(console.error);
-            } else if (soundRef.current) {
-                soundRef.current.stopAsync()
-                    .then(() => {
-                        handlePlayNextRef.current?.().catch(console.error);
-                    })
-                    .catch(console.error);
-            }
+        if (event.type === Event.PlaybackError) {
+            console.error('Playback error:', event);
         }
-    }, [state.repeatMode]);
+    });
 
     const playSong = useCallback(async (song: Song, newQueue?: Song[]) => {
         try {
-            if (soundRef.current) {
-                console.log('Cleaning up current sound before playing new song...');
-                await cleanupSound(soundRef.current);
-                setSound(undefined);
-                soundRef.current = undefined;
-                console.log('Sound cleanup completed successfully');
-            }
+            setIsLoading(true);
+            loadingRef.current = true;
 
-            // Only update queue if explicitly provided
+            // Reset the queue
+            await TrackPlayer.reset();
+
+            // Prepare the track
+            const track = {
+                id: song.track_id,
+                url: `https://music.napstr.uk/songs/${song.track_id}.mp3`,
+                title: song.title,
+                artist: song.artists.join(', '),
+                artwork: song.album_art,
+                duration: song.duration_ms / 1000,
+            };
+
+            // Add and play the track
+            await TrackPlayer.add(track);
+            await TrackPlayer.play();
+
+            // Update state
+            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
             if (newQueue) {
-                // Keep existing queue if not provided
-                const queueToUse = newQueue || state.queue;
-                const sortedQueue = [...queueToUse].sort((a, b) => 
-                    a.title.toLowerCase().localeCompare(b.title.toLowerCase())
-                );
-                const newIndex = sortedQueue.findIndex(s => s.track_id === song.track_id);
-                
-                console.log('Setting new queue:', {
-                    queueLength: sortedQueue.length,
-                    newIndex,
-                    songTitle: song.title
-                });
-
                 dispatch({ 
                     type: 'SET_QUEUE', 
                     payload: { 
-                        queue: sortedQueue,
-                        currentIndex: newIndex >= 0 ? newIndex : 0
-                    }
+                        queue: newQueue,
+                        currentIndex: newQueue.findIndex(s => s.track_id === song.track_id)
+                    } 
                 });
-            } else {
-                // Just update current index if playing from existing queue
-                const newIndex = state.queue.findIndex(s => s.track_id === song.track_id);
-                if (newIndex >= 0) {
-                    dispatch({
-                        type: 'SET_QUEUE',
-                        payload: {
-                            queue: state.queue,
-                            currentIndex: newIndex
-                        }
-                    });
-                }
             }
-
-            console.log(`No local file found, streaming: ${song.track_id}`);
-            console.log(`[${new Date().toISOString()}] Starting getStreamUrl request for track: ${song.track_id}`);
-            const startTime = Date.now();
-            const streamUrl = await api.songs.getStreamUrl(song.track_id);
-            console.log(`[${new Date().toISOString()}] Stream URL: ${streamUrl.url}`);
-            console.log(`[${new Date().toISOString()}] getStreamUrl complete (${Date.now() - startTime}ms)`);
-
-            const newSound = new Audio.Sound();
-            await newSound.loadAsync({ uri: streamUrl.url }, { shouldPlay: true });
-            
-            soundRef.current = newSound;
-            setSound(newSound);
-            
-            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
-            dispatch({ type: 'SET_PLAYING', payload: true });
-            
-            // Setup completion handler
-            newSound.setOnPlaybackStatusUpdate(onPlaybackStatusUpdate);
         } catch (error) {
             console.error('Error playing song:', error);
-            dispatch({ type: 'SET_PLAYING', payload: false });
-            if (soundRef.current) {
-                await cleanupSound(soundRef.current);
-                setSound(undefined);
-                soundRef.current = undefined;
-            }
-        }
-    }, [state.queue, onPlaybackStatusUpdate]);
-
-    const handlePlayNext: PlayNextFunction = useCallback(async () => {
-        if (state.queue.length === 0 || state.currentIndex === -1) return;
-        if (isPlayingNextRef.current) {
-            console.log('Already playing next song, skipping request');
-            return;
-        }
-
-        try {
-            isPlayingNextRef.current = true;
-            console.log('Starting to play next song...');
-
-            if (soundRef.current) {
-                console.log('Cleaning up current sound before playing next...');
-                await cleanupSound(soundRef.current);
-                setSound(undefined);
-                soundRef.current = undefined;
-                console.log('Current sound cleaned up successfully');
-            }
-
-            let nextIndex = state.currentIndex + 1;
-            
-            // Check if we need to extend the queue
-            if (state.isShuffled) {
-                const queueExtension = shuffleManager.extendQueueIfNeeded();
-                if (queueExtension) {
-                    console.log('Extending queue with new shuffled tracks');
-                    dispatch({ 
-                        type: 'SET_QUEUE', 
-                        payload: { 
-                            queue: queueExtension.queue,
-                            currentIndex: queueExtension.currentIndex
-                        }
-                    });
-                }
-            }
-            
-            // Handle reaching the end of the queue
-            if (nextIndex >= state.queue.length) {
-                if (state.repeatMode === 'all') {
-                    console.log('Reached end of queue, repeating from start');
-                    if (state.isShuffled) {
-                        // Reshuffle the queue when repeating in shuffle mode
-                        const { queue: newQueue } = shuffleManager.shuffleAll();
-                        dispatch({ 
-                            type: 'SET_QUEUE', 
-                            payload: { 
-                                queue: newQueue,
-                                currentIndex: 0
-                            }
-                        });
-                        nextIndex = 0;
-                    } else {
-                        // Just start from beginning for normal repeat
-                        nextIndex = 0;
-                    }
-                } else if (state.isShuffled) {
-                    // Try to extend the queue one last time for shuffle mode
-                    const queueExtension = shuffleManager.extendQueueIfNeeded();
-                    if (queueExtension) {
-                        console.log('Extending queue at the end with new shuffled tracks');
-                        dispatch({ 
-                            type: 'SET_QUEUE', 
-                            payload: queueExtension
-                        });
-                        nextIndex = queueExtension.currentIndex;
-                    } else {
-                        console.log('Reached end of queue, stopping playback');
-                        dispatch({ type: 'SET_PLAYING', payload: false });
-                        return;
-                    }
-                } else {
-                    console.log('Reached end of queue, stopping playback');
-                    dispatch({ type: 'SET_PLAYING', payload: false });
-                    return;
-                }
-            }
-
-            console.log(`Playing next song at index: ${nextIndex}`);
-            dispatch({ type: 'SET_CURRENT_INDEX', payload: nextIndex });
-            const nextSong = state.queue[nextIndex];
-            await playSong(nextSong, state.queue);
-        } catch (error) {
-            console.error('Error playing next song:', error);
-            dispatch({ type: 'SET_PLAYING', payload: false });
-            if (soundRef.current) {
-                await cleanupSound(soundRef.current);
-                setSound(undefined);
-                soundRef.current = undefined;
-            }
         } finally {
-            isPlayingNextRef.current = false;
+            setIsLoading(false);
+            loadingRef.current = false;
         }
-    }, [state.queue, state.currentIndex, state.repeatMode, state.isShuffled, cleanupSound, playSong, shuffleManager]);
-
-    useEffect(() => {
-        handlePlayNextRef.current = handlePlayNext;
-    }, [handlePlayNext]);
-
-    const playPrevious: PlayPreviousFunction = useCallback(async () => {
-        if (state.queue.length === 0 || state.currentIndex === -1) return;
-        if (isPlayingPreviousRef.current) {
-            console.log('Already playing previous song, skipping request');
-            return;
-        }
-
-        try {
-            isPlayingPreviousRef.current = true;
-            console.log('Starting to play previous song...');
-
-            if (soundRef.current) {
-                console.log('Cleaning up current sound before playing previous...');
-                await cleanupSound(soundRef.current);
-                setSound(undefined);
-                soundRef.current = undefined;
-                console.log('Current sound cleaned up successfully');
-            }
-
-            let prevIndex = state.currentIndex - 1;
-            
-            if (prevIndex < 0) {
-                if (state.repeatMode === 'all') {
-                    prevIndex = state.queue.length - 1;
-                } else {
-                    dispatch({ type: 'SET_PLAYING', payload: false });
-                    return;
-                }
-            }
-
-            console.log(`Playing previous song at index: ${prevIndex}`);
-            dispatch({ type: 'SET_CURRENT_INDEX', payload: prevIndex });
-            const prevSong = state.queue[prevIndex];
-            await playSong(prevSong, state.queue);
-        } catch (error) {
-            console.error('Error playing previous song:', error);
-            dispatch({ type: 'SET_PLAYING', payload: false });
-            if (soundRef.current) {
-                await cleanupSound(soundRef.current);
-                setSound(undefined);
-                soundRef.current = undefined;
-            }
-        } finally {
-            isPlayingPreviousRef.current = false;
-        }
-    }, [state.queue, state.currentIndex, state.repeatMode, cleanupSound, playSong]);
+    }, []);
 
     const playPause = useCallback(async () => {
-        if (!sound) return;
-
         try {
-            console.log('PlayerContext: Toggling play/pause...');
-            const status = await sound.getStatusAsync();
-            if (!status.isLoaded) {
-                console.log('PlayerContext: Sound is not loaded');
-                return;
-            }
-
-            if (status.isPlaying) {
-                console.log('PlayerContext: Currently playing, will pause');
-                dispatch({ type: 'SET_PLAYING', payload: false });
-                await sound.pauseAsync();
+            const playerState = await TrackPlayer.getState();
+            if (playerState === State.Playing) {
+                await TrackPlayer.pause();
             } else {
-                console.log('PlayerContext: Currently paused, will play');
-                dispatch({ type: 'SET_PLAYING', payload: true });
-                await sound.playAsync();
+                await TrackPlayer.play();
             }
         } catch (error) {
-            console.error('PlayerContext: Error toggling play/pause:', error);
-            const currentStatus = await sound.getStatusAsync();
-            if (currentStatus.isLoaded) {
-                dispatch({ type: 'SET_PLAYING', payload: currentStatus.isPlaying });
-            }
+            console.error('Error toggling play/pause:', error);
         }
-    }, [sound]);
-
-    const toggleShuffle = useCallback(() => {
-        console.log('PlayerContext - Toggling shuffle:', {
-            queueLength: state.queue.length,
-            originalQueueLength: state.originalQueue.length,
-            currentIndex: state.currentIndex,
-            isShuffled: state.isShuffled
-        });
-
-        // Don't allow shuffle if queue is empty
-        if (state.queue.length === 0) {
-            console.log('Cannot shuffle empty queue');
-            return;
-        }
-
-        // If we have a queue but no current song, start at beginning
-        if (state.currentIndex === -1) {
-            dispatch({ type: 'SET_CURRENT_INDEX', payload: 0 });
-        }
-
-        // Update QueueManager's state to match PlayerContext
-        queueManager.setQueue(state.queue, state.currentIndex);
-        queueManager.setShuffled(state.isShuffled);
-
-        // First update shuffle state
-        dispatch({ type: 'SET_SHUFFLE', payload: !state.isShuffled });
-
-        // Then get new queue from shuffle manager
-        const { queue: newQueue, currentIndex: newIndex } = shuffleManager.toggleShuffle();
-        
-        // Only update queue if we got a valid queue back
-        if (newQueue.length > 0) {
-            dispatch({ 
-                type: 'SET_QUEUE', 
-                payload: { 
-                    queue: newQueue,
-                    currentIndex: newIndex
-                }
-            });
-        }
-
-        console.log('PlayerContext - After toggle:', {
-            newQueueLength: newQueue.length,
-            newIndex,
-            isShuffled: !state.isShuffled
-        });
-    }, [state.isShuffled, state.queue.length, state.currentIndex, state.originalQueue.length, shuffleManager, queueManager]);
-
-    const toggleRepeat = useCallback(() => {
-        const modes = ['off', 'all', 'one'] as const;
-        const currentIndex = modes.indexOf(state.repeatMode);
-        const nextIndex = (currentIndex + 1) % modes.length;
-        dispatch({ type: 'SET_REPEAT_MODE', payload: modes[nextIndex] });
-    }, [state.repeatMode]);
-
-    const toggleMaximized = useCallback(() => {
-        dispatch({ type: 'SET_MAXIMIZED', payload: !state.isMaximized });
-    }, [state.isMaximized]);
+    }, []);
 
     const seek = useCallback(async (position: number) => {
-        if (!sound) return;
         try {
-            await sound.setPositionAsync(position * 1000);
+            await TrackPlayer.seekTo(position);
         } catch (error) {
             console.error('Error seeking:', error);
         }
-    }, [sound]);
+    }, []);
 
-    const value = useMemo(() => ({
+    const playNext = useCallback(async () => {
+        if (state.currentIndex < state.queue.length - 1) {
+            const nextSong = state.queue[state.currentIndex + 1];
+            await playSong(nextSong, state.queue);
+        }
+    }, [state.currentIndex, state.queue, playSong]);
+
+    const playPrevious = useCallback(async () => {
+        if (state.currentIndex > 0) {
+            const previousSong = state.queue[state.currentIndex - 1];
+            await playSong(previousSong, state.queue);
+        }
+    }, [state.currentIndex, state.queue, playSong]);
+
+    const value = {
         currentSong: state.currentSong,
         isPlaying: state.isPlaying,
         isShuffled: state.isShuffled,
@@ -620,43 +244,23 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         queue: state.queue,
         currentIndex: state.currentIndex,
         playPause,
-        playNext: handlePlayNext,
+        playNext,
         playPrevious,
-        toggleShuffle,
-        toggleRepeat,
-        toggleMaximized,
+        toggleShuffle: shuffleManager.toggleShuffle,
+        toggleRepeat: () => {
+            const modes = ['off', 'one', 'all'] as const;
+            const currentIndex = modes.indexOf(state.repeatMode);
+            const nextMode = modes[(currentIndex + 1) % modes.length];
+            dispatch({ type: 'SET_REPEAT_MODE', payload: nextMode });
+        },
+        toggleMaximized: () => dispatch({ type: 'SET_MAXIMIZED', payload: !state.isMaximized }),
         playSong,
         seek,
         setQueue: (queue: Song[], index: number) => {
+            dispatch({ type: 'SET_QUEUE', payload: { queue, currentIndex: index } });
             dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
-            dispatch({ 
-                type: 'SET_QUEUE', 
-                payload: { 
-                    queue: state.isShuffled ? shuffleArray(queue) : queue,
-                    currentIndex: index
-                }
-            });
-        }
-    }), [
-        state.currentSong,
-        state.isPlaying,
-        state.isShuffled,
-        state.repeatMode,
-        state.progress,
-        state.duration,
-        state.position,
-        state.isMaximized,
-        state.queue,
-        state.currentIndex,
-        playPause,
-        handlePlayNext,
-        playPrevious,
-        toggleShuffle,
-        toggleRepeat,
-        toggleMaximized,
-        playSong,
-        seek
-    ]);
+        },
+    };
 
     return (
         <PlayerContext.Provider value={value}>

@@ -19,27 +19,6 @@ export async function setupTrackPlayer() {
                 IOSCategoryOptions.AllowBluetoothA2DP,
                 IOSCategoryOptions.MixWithOthers,
             ],
-
-            // Android specific options
-            maxCacheSize: 1024 * 5, // 5mb
-        });
-
-        // Set up event listeners for audio routing changes
-        TrackPlayer.addEventListener(Event.RemoteStop, () => {
-            TrackPlayer.reset();
-        });
-
-        TrackPlayer.addEventListener(Event.RemoteDuck, async (event) => {
-            // Audio is temporarily interrupted (phone call, Siri, etc)
-            if (event.permanent) {
-                await TrackPlayer.pause();
-            } else {
-                if (event.paused) {
-                    await TrackPlayer.pause();
-                } else {
-                    await TrackPlayer.play();
-                }
-            }
         });
 
         await TrackPlayer.updateOptions({
@@ -49,12 +28,11 @@ export async function setupTrackPlayer() {
                 Capability.Pause,
                 Capability.SkipToNext,
                 Capability.SkipToPrevious,
+                Capability.Stop,
                 Capability.SeekTo,
-                Capability.JumpForward,
-                Capability.JumpBackward,
             ],
 
-            // Capabilities that will show up when the notification is in the compact form on Android
+            // Capabilities that will show up when the notification is in the compact form
             compactCapabilities: [
                 Capability.Play,
                 Capability.Pause,
@@ -67,11 +45,15 @@ export async function setupTrackPlayer() {
                 // Continue playback when app is killed
                 appKilledPlaybackBehavior: AppKilledPlaybackBehavior.ContinuePlayback,
             },
-
-            // Enable background audio
-            forwardJumpInterval: 30,
-            backwardJumpInterval: 30,
         });
+
+        // Set up event listeners
+        TrackPlayer.addEventListener(Event.RemotePlay, () => TrackPlayer.play());
+        TrackPlayer.addEventListener(Event.RemotePause, () => TrackPlayer.pause());
+        TrackPlayer.addEventListener(Event.RemoteStop, () => TrackPlayer.reset());
+        TrackPlayer.addEventListener(Event.RemoteNext, () => TrackPlayer.skipToNext());
+        TrackPlayer.addEventListener(Event.RemotePrevious, () => TrackPlayer.skipToPrevious());
+        TrackPlayer.addEventListener(Event.RemoteSeek, (event) => TrackPlayer.seekTo(event.position));
 
         console.log('TrackPlayer setup complete');
     } catch (error) {
