@@ -25,13 +25,6 @@ export class QueueManager {
             );
             this.queue = [...this.originalQueue];
         }
-        
-        console.log('QueueManager initialized:', {
-            queueLength: this.queue.length,
-            originalQueueLength: this.originalQueue.length,
-            firstSong: this.queue[0]?.title,
-            lastSong: this.queue[this.queue.length - 1]?.title
-        });
     }
 
     setQueue(newQueue: Song[], newIndex: number) {
@@ -41,18 +34,8 @@ export class QueueManager {
             return;
         }
 
-        console.log('QueueManager - Setting queue:', {
-            oldLength: this.queue.length,
-            newLength: newQueue.length,
-            oldIndex: this.currentIndex,
-            newIndex,
-            isShuffled: this.isShuffled,
-            originalQueueLength: this.originalQueue.length
-        });
-
         // If this is the first time setting the queue or original queue is empty
         if (this.originalQueue.length === 0) {
-            console.log('QueueManager - Setting original queue');
             // Sort original queue alphabetically
             this.originalQueue = [...newQueue].sort((a, b) => 
                 cleanTitleForSort(a.title).localeCompare(cleanTitleForSort(b.title))
@@ -62,24 +45,9 @@ export class QueueManager {
         // Update current queue
         this.queue = [...newQueue];
         this.currentIndex = Math.min(Math.max(0, newIndex), this.queue.length - 1);
-
-        console.log('QueueManager - Queue updated:', {
-            queueLength: this.queue.length,
-            currentIndex: this.currentIndex,
-            currentSong: this.queue[this.currentIndex]?.title,
-            isShuffled: this.isShuffled,
-            originalQueueLength: this.originalQueue.length
-        });
     }
 
     setShuffled(shuffled: boolean) {
-        console.log('QueueManager - Setting shuffled:', {
-            wasShuffled: this.isShuffled,
-            willBe: shuffled,
-            queueLength: this.queue.length,
-            originalQueueLength: this.originalQueue.length,
-            currentSong: this.getCurrentSong()?.title
-        });
         this.isShuffled = shuffled;
     }
 

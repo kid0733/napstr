@@ -36,11 +36,13 @@ export class ShuffleManager {
             // Enabling shuffle - create a new shuffled queue
             const shuffledQueue = this.shuffleArray([...originalQueue]);
             
-            // Keep current song at current position
+            // Keep current song at current position if one is playing
             if (currentSong && currentIndex >= 0) {
-                const songIndex = shuffledQueue.findIndex(s => s.track_id === currentSong.track_id);
-                if (songIndex !== currentIndex && songIndex !== -1) {
-                    shuffledQueue.splice(songIndex, 1);
+                const currentSongIndex = shuffledQueue.findIndex(s => s.track_id === currentSong.track_id);
+                if (currentSongIndex !== -1 && currentSongIndex !== currentIndex) {
+                    // Remove current song from its position
+                    shuffledQueue.splice(currentSongIndex, 1);
+                    // Insert it at the current index
                     shuffledQueue.splice(currentIndex, 0, currentSong);
                 }
             }
@@ -51,6 +53,7 @@ export class ShuffleManager {
                 currentSong: shuffledQueue[currentIndex]?.title
             });
 
+            this.queueManager.setShuffled(true);
             return {
                 queue: shuffledQueue,
                 currentIndex
@@ -69,6 +72,7 @@ export class ShuffleManager {
                 currentSong: originalQueue[validIndex]?.title
             });
 
+            this.queueManager.setShuffled(false);
             return {
                 queue: originalQueue,
                 currentIndex: validIndex

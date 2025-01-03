@@ -4,7 +4,7 @@ import { FlashList } from '@shopify/flash-list';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
 import { Blur } from '@/components/Blur/Blur';
-import { ProgressBar, type ProgressBarProps } from '../ProgressBar';
+import { ProgressBar } from '@/components/ProgressBar';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
 import Animated, {
@@ -202,8 +202,8 @@ const LyricLine = memo(function LyricLine({ line, type, index, currentLineIndex 
     const scale = useSharedValue(type === 'active' ? 1 : 0.95);
     const opacity = useSharedValue(
         type === 'active' ? 1 :
-        type === 'hidden' ? 0.2 :
-        0.5
+        type === 'hidden' ? 0.1 :
+        0.8
     );
 
     useEffect(() => {
@@ -211,23 +211,13 @@ const LyricLine = memo(function LyricLine({ line, type, index, currentLineIndex 
         translateY.value = withTiming(basePosition, {
             duration: 800,
             easing: Easing.bezier(0.16, 1, 0.3, 1), // Custom easing curve for smooth movement
-        }, () => {
-            // Then add a subtle spring effect at the end
-            translateY.value = withSpring(basePosition, {
-                mass: 0.8,
-                stiffness: 90,
-                damping: 15,
-                velocity: 0,
-                restDisplacementThreshold: 0.01,
-                restSpeedThreshold: 0.01,
-            });
         });
 
         // Smooth opacity transitions
         opacity.value = withTiming(
             type === 'active' ? 1 :
-            type === 'hidden' ? 0.2 :
-            0.5,
+            type === 'hidden' ? 0.1 :
+            0.8,
             {
                 duration: 600,
                 easing: Easing.bezier(0.4, 0, 0.2, 1),
@@ -379,8 +369,8 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
 
         const toValue = showLyrics ? 0 : 1;
         flipAnimation.value = withTiming(toValue, {
-            duration: 600,
-            easing: Easing.bezier(0.455, 0.03, 0.515, 0.955),
+            duration: 800,
+            easing: Easing.bezierFn(0.16, 1, 0.3, 1), // Custom spring-like easing
         }, (finished) => {
             if (finished) {
                 runOnJS(setShowLyrics)(!showLyrics);
@@ -466,17 +456,23 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             [0, 1],
             [0, 180]
         );
+        const scale = interpolate(
+            flipAnimation.value,
+            [0, 0.5, 1],
+            [1, 0.9, 1]
+        );
         return {
             transform: [
-                { perspective: 1000 },
+                { perspective: 2000 },
+                { scale },
                 { rotateY: `${rotateY}deg` }
             ],
             backfaceVisibility: 'hidden',
             zIndex: flipAnimation.value >= 0.5 ? 0 : 1,
             opacity: interpolate(
                 flipAnimation.value,
-                [0, 0.5, 0.5, 1],
-                [1, 0, 0, 0]
+                [0, 0.4, 0.5],
+                [1, 0, 0]
             ),
         };
     });
@@ -487,9 +483,15 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             [0, 1],
             [180, 360]
         );
+        const scale = interpolate(
+            flipAnimation.value,
+            [0, 0.5, 1],
+            [0.9, 0.9, 1]
+        );
         return {
             transform: [
-                { perspective: 1000 },
+                { perspective: 2000 },
+                { scale },
                 { rotateY: `${rotateY}deg` }
             ],
             backfaceVisibility: 'hidden',
@@ -501,8 +503,8 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             zIndex: flipAnimation.value >= 0.5 ? 1 : 0,
             opacity: interpolate(
                 flipAnimation.value,
-                [0, 0.5, 0.5, 1],
-                [0, 0, 0, 1]
+                [0.5, 0.6, 1],
+                [0, 1, 1]
             ),
         };
     });
@@ -517,15 +519,15 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         }
 
         const currentLineIndex = getCurrentLineIndex(position);
-        const visibleLines = [-1, 0, 1, 2].map(offset => {
+        // Show 5 lines: 2 previous, current, and 2 next
+        const visibleLines = [-2, -1, 0, 1, 2].map(offset => {
             const index = currentLineIndex + offset;
             if (index < 0 || index >= lyrics.lines.length) return null;
             return {
                 line: lyrics.lines[index],
                 type: offset === 0 ? 'active' : 
-                      offset === -1 ? 'previous' :
-                      offset === 1 ? 'next' :
-                      'hidden'
+                      offset < 0 ? 'previous' :
+                      'next'
             };
         }).filter((item): item is { line: LyricsLine; type: 'active' | 'previous' | 'next' | 'hidden' } => item !== null);
 
@@ -559,17 +561,8 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         }] },
         { type: 'additional', data: [{ showLyrics, handleLyricsPress }] },
         { type: 'queue', data: (() => {
-            console.log('MaximizedPlayer - Queue State:', {
-                isShuffled,
-                currentIndex,
-                queueLength: queue.length,
-                upNextLength: queue.slice(currentIndex + 1).length
-            });
-            
             // Get only the next 15 songs
             const upNextSongs = queue.slice(currentIndex + 1, currentIndex + 16);
-            console.log('MaximizedPlayer - Up Next Songs:', upNextSongs.map(s => s.title));
-            
             return upNextSongs.map(song => ({
                 track_id: song.track_id,
                 title: song.title,
@@ -623,9 +616,9 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                 return (
                     <View style={styles.progressContainer}>
                         <ProgressBar
-                            progress={progress || 0}
-                            currentTime={position || 0}
-                            duration={duration || 0}
+                            progress={duration > 0 ? Math.min(position / duration, 1) : 0}
+                            currentTime={position}
+                            duration={duration}
                             onSeek={seek}
                         />
                     </View>
@@ -935,7 +928,7 @@ const styles = StyleSheet.create({
     },
     darkOverlay: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
         zIndex: 1,
     },
     lyricsContainer: {
@@ -952,7 +945,7 @@ const styles = StyleSheet.create({
     },
     lyricsContent: {
         width: '100%',
-        height: LINE_HEIGHT * 5,
+        height: LINE_HEIGHT * 7,
         position: 'relative',
     },
     lyricsContentWrapper: {
@@ -973,7 +966,7 @@ const styles = StyleSheet.create({
     },
     highlightBar: {
         flex: 1,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        backgroundColor: 'transparent',
         borderRadius: 8,
         marginHorizontal: '4%',
         marginVertical: SCREEN_WIDTH * 0.02,
@@ -982,9 +975,9 @@ const styles = StyleSheet.create({
         position: 'absolute',
         left: 0,
         right: 0,
-        height: LINE_HEIGHT * 5,
-        top: '55%',
-        transform: [{ translateY: -(LINE_HEIGHT * 2.5) }],
+        height: LINE_HEIGHT * 7,
+        top: '50%',
+        transform: [{ translateY: -(LINE_HEIGHT * 3.5) }],
     },
     lyricLineContainer: {
         position: 'absolute',
@@ -993,29 +986,32 @@ const styles = StyleSheet.create({
         height: LINE_HEIGHT,
         width: '100%',
         justifyContent: 'center',
-        paddingVertical: SCREEN_WIDTH * 0.02,
+        paddingVertical: SCREEN_WIDTH * 0.015,
     },
     lyricLine: {
         fontSize: SCREEN_WIDTH * 0.04,
-        color: colors.greenTertiary,
+        color: 'rgba(255, 255, 255, 0.6)',
         textAlign: 'center',
         paddingHorizontal: '4%',
         width: '100%',
         lineHeight: SCREEN_WIDTH * 0.05,
     },
     lyricLineActive: {
-        color: colors.greenPrimary,
+        color: '#FFFFFF',
         fontSize: SCREEN_WIDTH * 0.045,
         fontWeight: '600',
     },
     lyricLinePrevious: {
-        fontSize: SCREEN_WIDTH * 0.04,
+        fontSize: SCREEN_WIDTH * 0.035,
+        opacity: 0.3,
     },
     lyricLineNext: {
-        fontSize: SCREEN_WIDTH * 0.04,
+        fontSize: SCREEN_WIDTH * 0.035,
+        opacity: 0.3,
     },
     lyricLineHidden: {
         fontSize: SCREEN_WIDTH * 0.035,
+        opacity: 0.1,
     },
     noLyricsContainer: {
         flex: 1,

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, useReducer } from 'react';
 import { Song } from '@/services/api';
-import TrackPlayer, { Event, State, useTrackPlayerEvents } from 'react-native-track-player';
+import TrackPlayer, { Event, State, useTrackPlayerEvents, useProgress } from 'react-native-track-player';
 import { api } from '@/services/api';
 import { SongStorage } from '@/services/storage/SongStorage';
 import { QueueManager } from '@/utils/queueManager';
@@ -120,7 +120,12 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
 }
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
-    const [state, dispatch] = useReducer(playerReducer, {
+    const [isLoading, setIsLoading] = useState(false);
+    const loadingRef = useRef(false);
+    const queueManager = useRef(new QueueManager()).current;
+    const shuffleManager = useRef(new ShuffleManager(queueManager)).current;
+
+    const initialState: PlayerState = {
         currentSong: null,
         isPlaying: false,
         isShuffled: false,
@@ -131,30 +136,29 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         isMaximized: false,
         queue: [],
         originalQueue: [],
-        currentIndex: -1,
-    });
+        currentIndex: 0
+    };
 
-    const [isLoading, setIsLoading] = useState(false);
-    const loadingRef = useRef(false);
-    const songStorage = useMemo(() => SongStorage.getInstance(), []);
-    const queueManager = useMemo(() => new QueueManager(), []);
-    const shuffleManager = useMemo(() => new ShuffleManager(queueManager), [queueManager]);
+    const [state, dispatch] = useReducer(playerReducer, initialState);
 
     // Initialize TrackPlayer
     useEffect(() => {
         setupTrackPlayer();
     }, []);
 
-    // Track Player Events
-    useTrackPlayerEvents([Event.PlaybackState, Event.PlaybackError], async (event) => {
-        if (event.type === Event.PlaybackState) {
-            const playerState = await TrackPlayer.getState();
-            dispatch({ type: 'SET_PLAYING', payload: playerState === State.Playing });
+    // Track progress updates
+    const { position, duration } = useProgress();
+
+    useEffect(() => {
+        if (position !== undefined && duration !== undefined) {
+            dispatch({ type: 'SET_POSITION', payload: position });
+            dispatch({ type: 'SET_DURATION', payload: duration });
+            dispatch({ 
+                type: 'SET_PROGRESS', 
+                payload: duration > 0 ? position / duration : 0 
+            });
         }
-        if (event.type === Event.PlaybackError) {
-            console.error('Playback error:', event);
-        }
-    });
+    }, [position, duration]);
 
     const playSong = useCallback(async (song: Song, newQueue?: Song[]) => {
         try {
@@ -197,6 +201,40 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
+    // Track Player Events
+    useTrackPlayerEvents([Event.PlaybackState, Event.PlaybackError, Event.PlaybackQueueEnded], async (event) => {
+        if (event.type === Event.PlaybackState) {
+            const playerState = await TrackPlayer.getState();
+            dispatch({ type: 'SET_PLAYING', payload: playerState === State.Playing });
+        }
+        else if (event.type === Event.PlaybackError) {
+            console.error('Playback error:', event);
+        }
+        else if (event.type === Event.PlaybackQueueEnded) {
+            try {
+                if (state.repeatMode === 'one') {
+                    // Repeat the current song
+                    await TrackPlayer.seekTo(0);
+                    await TrackPlayer.play();
+                } else if (state.repeatMode === 'all' && state.currentIndex === state.queue.length - 1) {
+                    // At the end of queue with repeat all, go back to first song
+                    const firstSong = state.queue[0];
+                    if (firstSong) {
+                        await playSong(firstSong, state.queue);
+                    }
+                } else if (state.currentIndex < state.queue.length - 1) {
+                    // Play next song if available
+                    const nextSong = state.queue[state.currentIndex + 1];
+                    if (nextSong) {
+                        await playSong(nextSong, state.queue);
+                    }
+                }
+            } catch (error) {
+                console.error('Error handling track completion:', error);
+            }
+        }
+    });
+
     const playPause = useCallback(async () => {
         try {
             const playerState = await TrackPlayer.getState();
@@ -232,6 +270,19 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, [state.currentIndex, state.queue, playSong]);
 
+    const toggleShuffle = useCallback(() => {
+        try {
+            const { queue, currentIndex } = shuffleManager.toggleShuffle();
+            dispatch({ type: 'SET_SHUFFLE', payload: !state.isShuffled });
+            dispatch({ 
+                type: 'SET_QUEUE', 
+                payload: { queue, currentIndex } 
+            });
+        } catch (error) {
+            console.error('Error toggling shuffle:', error);
+        }
+    }, [state.isShuffled, state.queue, state.currentIndex]);
+
     const value = {
         currentSong: state.currentSong,
         isPlaying: state.isPlaying,
@@ -246,7 +297,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         playPause,
         playNext,
         playPrevious,
-        toggleShuffle: shuffleManager.toggleShuffle,
+        toggleShuffle,
         toggleRepeat: () => {
             const modes = ['off', 'one', 'all'] as const;
             const currentIndex = modes.indexOf(state.repeatMode);
@@ -257,6 +308,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         playSong,
         seek,
         setQueue: (queue: Song[], index: number) => {
+            queueManager.setQueue(queue, index);
             dispatch({ type: 'SET_QUEUE', payload: { queue, currentIndex: index } });
             dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
         },

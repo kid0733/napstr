@@ -7,7 +7,9 @@ import Animated, {
     useAnimatedStyle,
     useSharedValue,
     withSpring,
-    runOnJS
+    withTiming,
+    runOnJS,
+    Easing
 } from 'react-native-reanimated';
 
 export interface ProgressBarProps {
@@ -20,7 +22,6 @@ export interface ProgressBarProps {
 interface GestureContext extends Record<string, unknown> {
     startX: number;
     startProgress: number;
-    [key: string]: unknown;
 }
 
 export const ProgressBar: React.FC<ProgressBarProps> = ({
@@ -29,32 +30,37 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
     duration,
     onSeek
 }) => {
-    const progressBarRef = useRef<View>(null);
     const [barWidth, setBarWidth] = useState(0);
     const [isSeeking, setIsSeeking] = useState(false);
     const translateX = useSharedValue(0);
     const dialScale = useSharedValue(1);
 
-    const updateTranslateX = useCallback(() => {
-        translateX.value = progress * barWidth;
-    }, [barWidth, progress]);
-
+    // Update progress with smooth animation
     React.useEffect(() => {
-        if (!isSeeking) {
-            updateTranslateX();
+        if (!isSeeking && barWidth > 0) {
+            console.log('Progress update:', { progress, currentTime, duration, barWidth });
+            const newPosition = progress * barWidth;
+            translateX.value = withTiming(newPosition, {
+                duration: 100,  // Faster updates for smoother movement
+                easing: Easing.linear
+            });
         }
-    }, [progress, barWidth, isSeeking, updateTranslateX]);
+    }, [progress, barWidth, isSeeking]);
 
     const formatTime = (seconds: number) => {
+        if (!seconds || isNaN(seconds)) return '0:00';
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
     const handleSeek = useCallback((position: number) => {
-        const clampedPosition = Math.max(0, Math.min(position, duration));
-        onSeek(clampedPosition);
-    }, [duration, onSeek]);
+        if (duration > 0) {
+            const seekTime = (position / barWidth) * duration;
+            console.log('Seeking to:', { position, barWidth, duration, seekTime });
+            onSeek(seekTime);
+        }
+    }, [duration, barWidth, onSeek]);
 
     const gestureHandler = useAnimatedGestureHandler<PanGestureHandlerGestureEvent, GestureContext>({
         onStart: (_, context) => {
@@ -69,8 +75,10 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
         },
         onEnd: () => {
             dialScale.value = withSpring(1);
-            const seekPosition = (translateX.value / barWidth) * duration;
-            runOnJS(handleSeek)(seekPosition);
+            if (barWidth > 0) {
+                const seekPosition = (translateX.value / barWidth) * duration;
+                runOnJS(handleSeek)(seekPosition);
+            }
             runOnJS(setIsSeeking)(false);
         }
     });
@@ -79,18 +87,18 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
         const clampedTranslateX = Math.min(Math.max(0, translateX.value), barWidth);
         return {
             transform: [
-                { translateX: clampedTranslateX - 10 }, // Center the dial
+                { translateX: clampedTranslateX - 10 },
                 { scale: dialScale.value }
             ]
         };
-    });
+    }, [barWidth]);
 
     const progressStyle = useAnimatedStyle(() => {
         const clampedTranslateX = Math.min(Math.max(0, translateX.value), barWidth);
         return {
             width: clampedTranslateX
         };
-    });
+    }, [barWidth]);
 
     return (
         <View style={styles.container}>
