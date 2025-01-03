@@ -211,12 +211,12 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
             <MaximizedPlayer
                 visible={showMaximizedPlayer}
                 onClose={handleMaximizedPlayerClose}
-                currentTrack={currentSong ? {
-                    title: currentSong.title,
-                    artist: currentSong.artists.join(', '),
-                    artwork: currentSong.album_art,
-                    track_id: currentSong.track_id
-                } : null}
+                currentTrack={{
+                    title: displaySong.title,
+                    artist: Array.isArray(displaySong.artists) ? displaySong.artists.join(', ') : displaySong.artists,
+                    artwork: displaySong.album_art,
+                    track_id: (displaySong as any).track_id || 'default'
+                }}
             />
             <FloatingOptions
                 options={options}

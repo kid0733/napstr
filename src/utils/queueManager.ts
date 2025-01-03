@@ -1,60 +1,94 @@
 import { Song } from '@/services/api';
 
+// Helper function to clean title for sorting
+function cleanTitleForSort(title: string): string {
+    // Remove articles from start
+    let cleaned = title.replace(/^(a|an|the)\s+/i, '');
+    // Remove special characters, keep letters, numbers and spaces
+    cleaned = cleaned.toLowerCase().replace(/[^a-z0-9\s]/g, '');
+    // Remove extra spaces
+    cleaned = cleaned.replace(/\s+/g, ' ').trim();
+    return cleaned;
+}
+
 export class QueueManager {
     private queue: Song[] = [];
     private originalQueue: Song[] = [];
-    private currentIndex: number = -1;
+    private currentIndex: number = 0;
     private isShuffled: boolean = false;
 
-    constructor(initialQueue: Song[] = [], currentIndex: number = -1) {
-        this.queue = [...initialQueue];
-        this.originalQueue = [...initialQueue];
-        this.currentIndex = currentIndex;
+    constructor(initialQueue: Song[] = []) {
+        if (initialQueue.length > 0) {
+            // Sort initial queue alphabetically
+            this.originalQueue = [...initialQueue].sort((a, b) => 
+                cleanTitleForSort(a.title).localeCompare(cleanTitleForSort(b.title))
+            );
+            this.queue = [...this.originalQueue];
+        }
+        
+        console.log('QueueManager initialized:', {
+            queueLength: this.queue.length,
+            originalQueueLength: this.originalQueue.length,
+            firstSong: this.queue[0]?.title,
+            lastSong: this.queue[this.queue.length - 1]?.title
+        });
+    }
+
+    setQueue(newQueue: Song[], newIndex: number) {
+        // Guard against empty queue
+        if (!newQueue || newQueue.length === 0) {
+            console.warn('QueueManager - Attempted to set empty queue');
+            return;
+        }
+
+        console.log('QueueManager - Setting queue:', {
+            oldLength: this.queue.length,
+            newLength: newQueue.length,
+            oldIndex: this.currentIndex,
+            newIndex,
+            isShuffled: this.isShuffled,
+            originalQueueLength: this.originalQueue.length
+        });
+
+        // If this is the first time setting the queue or original queue is empty
+        if (this.originalQueue.length === 0) {
+            console.log('QueueManager - Setting original queue');
+            // Sort original queue alphabetically
+            this.originalQueue = [...newQueue].sort((a, b) => 
+                cleanTitleForSort(a.title).localeCompare(cleanTitleForSort(b.title))
+            );
+        }
+
+        // Update current queue
+        this.queue = [...newQueue];
+        this.currentIndex = Math.min(Math.max(0, newIndex), this.queue.length - 1);
+
+        console.log('QueueManager - Queue updated:', {
+            queueLength: this.queue.length,
+            currentIndex: this.currentIndex,
+            currentSong: this.queue[this.currentIndex]?.title,
+            isShuffled: this.isShuffled,
+            originalQueueLength: this.originalQueue.length
+        });
+    }
+
+    setShuffled(shuffled: boolean) {
+        console.log('QueueManager - Setting shuffled:', {
+            wasShuffled: this.isShuffled,
+            willBe: shuffled,
+            queueLength: this.queue.length,
+            originalQueueLength: this.originalQueue.length,
+            currentSong: this.getCurrentSong()?.title
+        });
+        this.isShuffled = shuffled;
     }
 
     getCurrentSong(): Song | null {
+        if (this.queue.length === 0) return null;
         if (this.currentIndex < 0 || this.currentIndex >= this.queue.length) {
-            return null;
+            this.currentIndex = 0;
         }
         return this.queue[this.currentIndex];
-    }
-
-    getUpNext(): Song[] {
-        return this.queue.slice(this.currentIndex + 1);
-    }
-
-    getPrevious(): Song[] {
-        return this.queue.slice(0, this.currentIndex);
-    }
-
-    jumpToSong(song: Song): number {
-        const newIndex = this.queue.findIndex(s => s.track_id === song.track_id);
-        if (newIndex !== -1) {
-            this.currentIndex = newIndex;
-        }
-        return this.currentIndex;
-    }
-
-    moveToIndex(index: number): Song | null {
-        if (index >= 0 && index < this.queue.length) {
-            this.currentIndex = index;
-            return this.queue[index];
-        }
-        return null;
-    }
-
-    getNextSong(): Song | null {
-        if (this.currentIndex + 1 < this.queue.length) {
-            return this.queue[this.currentIndex + 1];
-        }
-        return null;
-    }
-
-    getPreviousSong(): Song | null {
-        if (this.currentIndex > 0) {
-            return this.queue[this.currentIndex - 1];
-        }
-        return null;
     }
 
     getCurrentIndex(): number {
@@ -69,14 +103,12 @@ export class QueueManager {
         return this.originalQueue;
     }
 
-    setQueue(newQueue: Song[], newIndex: number = -1) {
-        this.queue = [...newQueue];
-        this.originalQueue = [...newQueue];
-        this.currentIndex = newIndex;
-        this.isShuffled = false;
-    }
-
     isQueueShuffled(): boolean {
         return this.isShuffled;
+    }
+
+    getUpNext(): Song[] {
+        if (this.queue.length === 0) return [];
+        return this.queue.slice(this.currentIndex + 1);
     }
 } 

@@ -32,6 +32,7 @@ export interface PlayerContextType {
     toggleMaximized: () => void;
     playSong: (song: Song, queue?: Song[]) => Promise<void>;
     seek: (position: number) => Promise<void>;
+    setQueue: (queue: Song[], index: number) => void;
 }
 
 const defaultContext: PlayerContextType = {
@@ -53,9 +54,10 @@ const defaultContext: PlayerContextType = {
     toggleMaximized: () => {},
     playSong: async () => {},
     seek: async () => {},
+    setQueue: () => {},
 };
 
-const PlayerContext = createContext<PlayerContextType>(defaultContext);
+export const PlayerContext = createContext<PlayerContextType>(defaultContext);
 
 type PlayerState = {
     currentSong: Song | null;
@@ -290,83 +292,80 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, [state.repeatMode]);
 
-    const playSong = useCallback<PlaySongFunction>(async (song, queue) => {
-        if (loadingRef.current || !song) return;
-        
+    const playSong = useCallback(async (song: Song, newQueue?: Song[]) => {
         try {
-            loadingRef.current = true;
-            setIsLoading(true);
-
-            // Clean up existing sound
             if (soundRef.current) {
+                console.log('Cleaning up current sound before playing new song...');
                 await cleanupSound(soundRef.current);
+                setSound(undefined);
+                soundRef.current = undefined;
+                console.log('Sound cleanup completed successfully');
             }
 
-            // Check for downloaded file first
-            const downloadManager = DownloadManager.getInstance();
-            const localUri = await downloadManager.getLocalUri(song.track_id);
-            
-            let audioUri: string;
-            
-            if (localUri) {
-                console.log('Using downloaded file:', localUri);
-                await downloadManager.appendToLog(`Playing downloaded file for: ${song.track_id}`);
-                audioUri = localUri;
-            } else {
-                console.log('No local file found, streaming:', song.track_id);
-                await downloadManager.appendToLog(`Streaming file: ${song.track_id}`);
-                const streamData = await api.songs.getStreamUrl(song.track_id);
-                audioUri = streamData.url;
-            }
-
-            // Load the song with optimized settings for background playback
-            const { sound: newSound } = await Audio.Sound.createAsync(
-                { uri: audioUri },
-                { 
-                    shouldPlay: true,
-                    progressUpdateIntervalMillis: 500,
-                    positionMillis: 0,
-                    rate: 1.0,
-                    shouldCorrectPitch: true,
-                    volume: 1.0,
-                    isMuted: false,
-                    isLooping: state.repeatMode === 'one',
-                },
-                onPlaybackStatusUpdate
-            );
-
-            soundRef.current = newSound;
-            setSound(newSound);
-            
-            // Update state
-            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
-            dispatch({ type: 'SET_PLAYING', payload: true });
-            
-            if (queue) {
-                const newQueue = state.isShuffled ? shuffleArray(queue) : queue;
-                const currentIndex = newQueue.findIndex(s => s.track_id === song.track_id);
+            // Only update queue if explicitly provided
+            if (newQueue) {
+                // Keep existing queue if not provided
+                const queueToUse = newQueue || state.queue;
+                const sortedQueue = [...queueToUse].sort((a, b) => 
+                    a.title.toLowerCase().localeCompare(b.title.toLowerCase())
+                );
+                const newIndex = sortedQueue.findIndex(s => s.track_id === song.track_id);
                 
+                console.log('Setting new queue:', {
+                    queueLength: sortedQueue.length,
+                    newIndex,
+                    songTitle: song.title
+                });
+
                 dispatch({ 
                     type: 'SET_QUEUE', 
                     payload: { 
-                        queue: newQueue,
-                        currentIndex: currentIndex 
-                    } 
+                        queue: sortedQueue,
+                        currentIndex: newIndex >= 0 ? newIndex : 0
+                    }
                 });
-                
-                if (!state.isShuffled) {
-                    dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
+            } else {
+                // Just update current index if playing from existing queue
+                const newIndex = state.queue.findIndex(s => s.track_id === song.track_id);
+                if (newIndex >= 0) {
+                    dispatch({
+                        type: 'SET_QUEUE',
+                        payload: {
+                            queue: state.queue,
+                            currentIndex: newIndex
+                        }
+                    });
                 }
             }
+
+            console.log(`No local file found, streaming: ${song.track_id}`);
+            console.log(`[${new Date().toISOString()}] Starting getStreamUrl request for track: ${song.track_id}`);
+            const startTime = Date.now();
+            const streamUrl = await api.songs.getStreamUrl(song.track_id);
+            console.log(`[${new Date().toISOString()}] Stream URL: ${streamUrl.url}`);
+            console.log(`[${new Date().toISOString()}] getStreamUrl complete (${Date.now() - startTime}ms)`);
+
+            const newSound = new Audio.Sound();
+            await newSound.loadAsync({ uri: streamUrl.url }, { shouldPlay: true });
+            
+            soundRef.current = newSound;
+            setSound(newSound);
+            
+            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
+            dispatch({ type: 'SET_PLAYING', payload: true });
+            
+            // Setup completion handler
+            newSound.setOnPlaybackStatusUpdate(onPlaybackStatusUpdate);
         } catch (error) {
             console.error('Error playing song:', error);
-            const downloadManager = DownloadManager.getInstance();
-            await downloadManager.appendToLog(`Error playing song ${song.track_id}: ${error}`);
-        } finally {
-            loadingRef.current = false;
-            setIsLoading(false);
+            dispatch({ type: 'SET_PLAYING', payload: false });
+            if (soundRef.current) {
+                await cleanupSound(soundRef.current);
+                setSound(undefined);
+                soundRef.current = undefined;
+            }
         }
-    }, [state.isShuffled, state.repeatMode, cleanupSound, shuffleArray]);
+    }, [state.queue, onPlaybackStatusUpdate]);
 
     const handlePlayNext: PlayNextFunction = useCallback(async () => {
         if (state.queue.length === 0 || state.currentIndex === -1) return;
@@ -543,16 +542,51 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }, [sound]);
 
     const toggleShuffle = useCallback(() => {
-        const { queue: newQueue, currentIndex: newIndex } = shuffleManager.toggleShuffle();
-        dispatch({ type: 'SET_SHUFFLE', payload: !state.isShuffled });
-        dispatch({ 
-            type: 'SET_QUEUE', 
-            payload: { 
-                queue: newQueue,
-                currentIndex: newIndex
-            }
+        console.log('PlayerContext - Toggling shuffle:', {
+            queueLength: state.queue.length,
+            originalQueueLength: state.originalQueue.length,
+            currentIndex: state.currentIndex,
+            isShuffled: state.isShuffled
         });
-    }, [state.isShuffled, shuffleManager]);
+
+        // Don't allow shuffle if queue is empty
+        if (state.queue.length === 0) {
+            console.log('Cannot shuffle empty queue');
+            return;
+        }
+
+        // If we have a queue but no current song, start at beginning
+        if (state.currentIndex === -1) {
+            dispatch({ type: 'SET_CURRENT_INDEX', payload: 0 });
+        }
+
+        // Update QueueManager's state to match PlayerContext
+        queueManager.setQueue(state.queue, state.currentIndex);
+        queueManager.setShuffled(state.isShuffled);
+
+        // First update shuffle state
+        dispatch({ type: 'SET_SHUFFLE', payload: !state.isShuffled });
+
+        // Then get new queue from shuffle manager
+        const { queue: newQueue, currentIndex: newIndex } = shuffleManager.toggleShuffle();
+        
+        // Only update queue if we got a valid queue back
+        if (newQueue.length > 0) {
+            dispatch({ 
+                type: 'SET_QUEUE', 
+                payload: { 
+                    queue: newQueue,
+                    currentIndex: newIndex
+                }
+            });
+        }
+
+        console.log('PlayerContext - After toggle:', {
+            newQueueLength: newQueue.length,
+            newIndex,
+            isShuffled: !state.isShuffled
+        });
+    }, [state.isShuffled, state.queue.length, state.currentIndex, state.originalQueue.length, shuffleManager, queueManager]);
 
     const toggleRepeat = useCallback(() => {
         const modes = ['off', 'all', 'one'] as const;
@@ -592,7 +626,17 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         toggleRepeat,
         toggleMaximized,
         playSong,
-        seek
+        seek,
+        setQueue: (queue: Song[], index: number) => {
+            dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
+            dispatch({ 
+                type: 'SET_QUEUE', 
+                payload: { 
+                    queue: state.isShuffled ? shuffleArray(queue) : queue,
+                    currentIndex: index
+                }
+            });
+        }
     }), [
         state.currentSong,
         state.isPlaying,

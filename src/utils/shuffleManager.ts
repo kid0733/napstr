@@ -2,181 +2,141 @@ import { Song } from '@/services/api';
 import { QueueManager } from './queueManager';
 
 export class ShuffleManager {
-    private queueManager: QueueManager;
-    private recentlyPlayed: Set<string> = new Set();
-    private maxHistorySize: number = 50;
-    private minRemainingTracks: number = 3;
-
-    constructor(queueManager: QueueManager) {
-        this.queueManager = queueManager;
-    }
-
-    private addToHistory(song: Song) {
-        if (this.recentlyPlayed.size >= this.maxHistorySize) {
-            const firstItem = this.recentlyPlayed.values().next().value;
-            this.recentlyPlayed.delete(firstItem);
-        }
-        this.recentlyPlayed.add(song.track_id);
-    }
-
-    private getWeight(song: Song): number {
-        // Songs not in history get higher weight
-        return this.recentlyPlayed.has(song.track_id) ? 0.3 : 1.0;
-    }
+    constructor(private queueManager: QueueManager) {}
 
     private shuffleArray(array: Song[]): Song[] {
-        const newArray = [...array];
-        const weights = newArray.map(song => this.getWeight(song));
-        
-        for (let i = newArray.length - 1; i > 0; i--) {
-            // Use weighted random selection
-            const totalWeight = weights.slice(0, i + 1).reduce((sum, w) => sum + w, 0);
-            let random = Math.random() * totalWeight;
-            
-            let j = 0;
-            while (random > 0) {
-                random -= weights[j];
-                if (random <= 0) break;
-                j++;
-            }
-
-            // Swap elements and weights
-            [newArray[i], newArray[j]] = [newArray[j], newArray[i]];
-            [weights[i], weights[j]] = [weights[j], weights[i]];
+        const shuffled = [...array];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
         }
-
-        return newArray;
-    }
-
-    private shouldExtendQueue(): boolean {
-        const upNext = this.queueManager.getUpNext();
-        const currentSong = this.queueManager.getCurrentSong();
-        const originalQueue = this.queueManager.getOriginalQueue();
-        
-        if (!currentSong || originalQueue.length === 0) return false;
-        
-        // Get first and last songs from original queue
-        const firstSong = originalQueue[0];
-        const lastSong = originalQueue[originalQueue.length - 1];
-        
-        // Check if current song is first or last in original queue by track_id
-        const isFirstOrLast = currentSong.track_id === firstSong.track_id || 
-                             currentSong.track_id === lastSong.track_id;
-        
-        // Always ensure we have minimum tracks ahead, especially for first/last songs
-        return upNext.length <= this.minRemainingTracks || isFirstOrLast;
-    }
-
-    private getNewTracksForQueue(): Song[] {
-        const originalQueue = this.queueManager.getOriginalQueue();
-        const currentQueue = this.queueManager.getQueue();
-        const currentSong = this.queueManager.getCurrentSong();
-        
-        // Filter out songs that are currently in the queue
-        const currentIds = new Set(currentQueue.map(s => s.track_id));
-        let availableSongs = originalQueue.filter(s => !currentIds.has(s.track_id));
-        
-        // Check if current song is first or last in original queue
-        if (currentSong) {
-            const firstSong = originalQueue[0];
-            const lastSong = originalQueue[originalQueue.length - 1];
-            const isFirstOrLast = currentSong.track_id === firstSong.track_id || 
-                                 currentSong.track_id === lastSong.track_id;
-            
-            // If we're at first or last song, ensure we have enough songs
-            if (isFirstOrLast && availableSongs.length < this.minRemainingTracks) {
-                this.recentlyPlayed.clear(); // Reset history to allow replaying songs
-                availableSongs = [...originalQueue]; // Use all songs
-            }
-        }
-        
-        if (availableSongs.length === 0) {
-            // If all songs have been used, reset history and use all songs
-            this.recentlyPlayed.clear();
-            return this.shuffleArray([...originalQueue]);
-        }
-        
-        return this.shuffleArray(availableSongs);
+        return shuffled;
     }
 
     toggleShuffle(): { queue: Song[]; currentIndex: number } {
         const currentSong = this.queueManager.getCurrentSong();
+        const originalQueue = this.queueManager.getOriginalQueue();
         const currentIndex = this.queueManager.getCurrentIndex();
-        
-        if (!this.queueManager.isQueueShuffled()) {
-            // When enabling shuffle
-            const beforeCurrentSong = this.queueManager.getPrevious();
-            const afterCurrentSong = this.shuffleArray(this.queueManager.getUpNext());
-            const newQueue = [...beforeCurrentSong, currentSong!, ...afterCurrentSong];
+        const isShuffled = this.queueManager.isQueueShuffled();
+
+        console.log('ShuffleManager - Before toggle:', {
+            isShuffled,
+            queueLength: originalQueue.length,
+            currentSong: currentSong?.title,
+            currentIndex
+        });
+
+        // Guard against empty original queue
+        if (originalQueue.length === 0) {
+            console.warn('ShuffleManager - Cannot shuffle empty queue');
+            return { queue: [], currentIndex: 0 };
+        }
+
+        if (!isShuffled) {
+            // Enabling shuffle - create a new shuffled queue
+            const shuffledQueue = this.shuffleArray([...originalQueue]);
             
-            // Add current song to history
-            if (currentSong) {
-                this.addToHistory(currentSong);
+            // Keep current song at current position
+            if (currentSong && currentIndex >= 0) {
+                const songIndex = shuffledQueue.findIndex(s => s.track_id === currentSong.track_id);
+                if (songIndex !== currentIndex && songIndex !== -1) {
+                    shuffledQueue.splice(songIndex, 1);
+                    shuffledQueue.splice(currentIndex, 0, currentSong);
+                }
             }
-            
+
+            console.log('ShuffleManager - Enabled shuffle:', {
+                queueLength: shuffledQueue.length,
+                currentIndex,
+                currentSong: shuffledQueue[currentIndex]?.title
+            });
+
             return {
-                queue: newQueue,
-                currentIndex: currentIndex
+                queue: shuffledQueue,
+                currentIndex
             };
         } else {
-            // When disabling shuffle, restore original order
-            const originalQueue = this.queueManager.getOriginalQueue();
-            const newCurrentIndex = originalQueue.findIndex(
-                s => s.track_id === currentSong?.track_id
-            );
-            
-            // Clear history when disabling shuffle
-            this.recentlyPlayed.clear();
-            
+            // Disabling shuffle - restore original queue
+            const newIndex = currentSong 
+                ? originalQueue.findIndex(s => s.track_id === currentSong.track_id)
+                : 0;
+
+            const validIndex = Math.max(0, newIndex);
+
+            console.log('ShuffleManager - Disabled shuffle:', {
+                queueLength: originalQueue.length,
+                currentIndex: validIndex,
+                currentSong: originalQueue[validIndex]?.title
+            });
+
             return {
                 queue: originalQueue,
-                currentIndex: newCurrentIndex >= 0 ? newCurrentIndex : currentIndex
+                currentIndex: validIndex
             };
         }
     }
 
     shuffleAll(): { queue: Song[]; currentIndex: number } {
-        const shuffledQueue = this.shuffleArray(this.queueManager.getQueue());
-        // Reset history when shuffling all
-        this.recentlyPlayed.clear();
+        const originalQueue = this.queueManager.getOriginalQueue();
+        
+        // Guard against empty original queue
+        if (originalQueue.length === 0) {
+            console.warn('ShuffleManager - Cannot shuffle empty queue');
+            return { queue: [], currentIndex: 0 };
+        }
+
+        const shuffledQueue = this.shuffleArray([...originalQueue]);
+        
+        console.log('ShuffleManager - Shuffling all songs:', {
+            queueLength: shuffledQueue.length,
+            firstSong: shuffledQueue[0]?.title
+        });
+
         return {
             queue: shuffledQueue,
             currentIndex: 0
         };
     }
 
-    shuffleRemaining(): { queue: Song[]; currentIndex: number } {
-        const currentIndex = this.queueManager.getCurrentIndex();
-        const currentSong = this.queueManager.getCurrentSong();
-        
-        if (!currentSong) {
-            return this.shuffleAll();
-        }
-
-        const beforeCurrentSong = this.queueManager.getPrevious();
-        const afterCurrentSong = this.shuffleArray(this.queueManager.getUpNext());
-        
-        // Add current song to history
-        this.addToHistory(currentSong);
-        
-        return {
-            queue: [...beforeCurrentSong, currentSong, ...afterCurrentSong],
-            currentIndex: currentIndex
-        };
-    }
-
-    // New method to extend the queue when needed
     extendQueueIfNeeded(): { queue: Song[]; currentIndex: number } | null {
-        if (!this.shouldExtendQueue() || !this.queueManager.isQueueShuffled()) {
+        const currentQueue = this.queueManager.getQueue();
+        const currentIndex = this.queueManager.getCurrentIndex();
+        const remainingSongs = currentQueue.length - currentIndex - 1;
+
+        // If we have enough songs remaining, no need to extend
+        if (remainingSongs > 5) {
             return null;
         }
 
-        const currentQueue = this.queueManager.getQueue();
-        const currentIndex = this.queueManager.getCurrentIndex();
-        const newTracks = this.getNewTracksForQueue();
+        // Get original queue and remove songs already in current queue
+        const originalQueue = this.queueManager.getOriginalQueue();
+        
+        // Guard against empty original queue
+        if (originalQueue.length === 0) {
+            console.warn('ShuffleManager - Cannot extend empty queue');
+            return null;
+        }
+
+        const currentSongIds = new Set(currentQueue.map(s => s.track_id));
+        const availableSongs = originalQueue.filter(s => !currentSongIds.has(s.track_id));
+
+        // If no more songs available, return null
+        if (availableSongs.length === 0) {
+            return null;
+        }
+
+        // Shuffle available songs and add them to the queue
+        const shuffledNewSongs = this.shuffleArray(availableSongs);
+        const newQueue = [...currentQueue, ...shuffledNewSongs];
+
+        console.log('ShuffleManager - Extending queue:', {
+            originalLength: currentQueue.length,
+            newLength: newQueue.length,
+            addedSongs: shuffledNewSongs.length
+        });
 
         return {
-            queue: [...currentQueue, ...newTracks],
+            queue: newQueue,
             currentIndex: currentIndex
         };
     }

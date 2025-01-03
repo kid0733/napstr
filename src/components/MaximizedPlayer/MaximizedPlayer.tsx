@@ -424,13 +424,17 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
     }, [playPrevious]);
 
     const handleQueueItemPress = useCallback(async (song: Song) => {
+        console.log('MaximizedPlayer - Queue Item Pressed:', {
+            songTitle: song.title,
+            currentIndex,
+            isShuffled
+        });
         try {
-            // Pass the existing queue to maintain order
             await playSong(song, queue);
         } catch (error) {
             console.error('Error playing song from queue:', error);
         }
-    }, [playSong, queue]);
+    }, [playSong, queue, currentIndex, isShuffled]);
 
     const panGestureEvent = useAnimatedGestureHandler<PanGestureHandlerGestureEvent, GestureContext>({
         onStart: (_, context) => {
@@ -554,7 +558,26 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             isShuffled, repeatMode, toggleShuffle, toggleRepeat 
         }] },
         { type: 'additional', data: [{ showLyrics, handleLyricsPress }] },
-        { type: 'queue', data: queue.slice(currentIndex + 1) }
+        { type: 'queue', data: (() => {
+            console.log('MaximizedPlayer - Queue State:', {
+                isShuffled,
+                currentIndex,
+                queueLength: queue.length,
+                upNextLength: queue.slice(currentIndex + 1).length
+            });
+            
+            // Get only the next 15 songs
+            const upNextSongs = queue.slice(currentIndex + 1, currentIndex + 16);
+            console.log('MaximizedPlayer - Up Next Songs:', upNextSongs.map(s => s.title));
+            
+            return upNextSongs.map(song => ({
+                track_id: song.track_id,
+                title: song.title,
+                artist: song.artists.join(', '),
+                artwork: song.album_art,
+                fullSong: song
+            }));
+        })()} 
     ] : [];
 
     const renderItem = useCallback(({ item, index }: { item: any, index: number }) => {
@@ -642,14 +665,14 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                 return (
                     <View style={styles.queueContainer}>
                         <Text style={styles.queueHeader}>Up Next</Text>
-                        {section.data.map((queueItem: Song) => (
+                        {section.data.map((queueItem) => (
                             <QueueItem
                                 key={queueItem.track_id}
                                 title={queueItem.title}
-                                artist={queueItem.artists.join(', ')}
-                                artwork={queueItem.album_art}
+                                artist={queueItem.artist}
+                                artwork={queueItem.artwork}
                                 isPlaying={false}
-                                onPress={() => handleQueueItemPress(queueItem)}
+                                onPress={() => handleQueueItemPress(queueItem.fullSong)}
                             />
                         ))}
                     </View>
