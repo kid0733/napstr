@@ -2,7 +2,7 @@ import { Tabs } from 'expo-router'
 import { MaterialIcons } from '@expo/vector-icons'
 import { colors } from '@/constants/tokens'
 import { NowPlayingBar } from '@/components/NowPlayingBar'
-import { View, Dimensions, StyleSheet } from 'react-native'
+import { View, StyleSheet } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { NavigationBar } from '@/components/FloatingActionBar/NavigationBar'
 import { AnimatedTitle } from '@/components/AnimatedTitle'
@@ -10,7 +10,6 @@ import { usePathname } from 'expo-router'
 
 export default function TabsLayout() {
     const pathname = usePathname()
-    const screenHeight = Dimensions.get('window').height
 
     let currentTitle = 'Songs'
     if (pathname?.includes('/favourites')) {
@@ -18,25 +17,28 @@ export default function TabsLayout() {
     } else if (pathname?.includes('/playlists')) {
         currentTitle = 'Playlists'
     } else if (pathname?.includes('/artists')) {
-        currentTitle = 'Artists'
+        currentTitle = 'Social'
     } else if (pathname?.includes('/(debug)')) {
         currentTitle = 'Debug'
     }
 
     return (
-        <SafeAreaView style={[layoutStyles.container]}>
-            {/* Title Section */}
-            <View style={layoutStyles.titleSection}>
-                <AnimatedTitle title={currentTitle} />
-            </View>
+        <SafeAreaView style={[layoutStyles.container]} edges={['top']}>
+            {/* Header Section */}
+            <View style={layoutStyles.header}>
+                {/* Title Section */}
+                <View style={layoutStyles.titleSection}>
+                    <AnimatedTitle title={currentTitle} />
+                </View>
 
-            {/* Navigation Menu */}
-            <View style={layoutStyles.menuSection}>
-                <NavigationBar currentRoute={pathname} />
+                {/* Navigation Menu */}
+                <View style={layoutStyles.menuSection}>
+                    <NavigationBar currentRoute={pathname} />
+                </View>
             </View>
 
             {/* Content Section */}
-            <View style={layoutStyles.contentSection}>
+            <View style={layoutStyles.contentWrapper}>
                 <Tabs
                     screenOptions={{
                         headerShown: false,
@@ -50,9 +52,9 @@ export default function TabsLayout() {
                         }}
                     />
                     <Tabs.Screen
-                        name="artists/index"
+                        name="favourites/index"
                         options={{
-                            title: 'Artists',
+                            title: 'Favourites',
                         }}
                     />
                     <Tabs.Screen
@@ -62,9 +64,9 @@ export default function TabsLayout() {
                         }}
                     />
                     <Tabs.Screen
-                        name="favourites/index"
+                        name="artists/index"
                         options={{
-                            title: 'Favourites',
+                            title: 'Social',
                         }}
                     />
                     <Tabs.Screen
@@ -76,34 +78,46 @@ export default function TabsLayout() {
                 </Tabs>
             </View>
 
-            {/* Now Playing Bar */}
-            <NowPlayingBar />
+            {/* Player Bar */}
+            <View style={layoutStyles.playerSection}>
+                <NowPlayingBar />
+            </View>
         </SafeAreaView>
     )
 }
+
 const layoutStyles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
     },
-    titleSection: {
-        paddingLeft: 16,
+    header: {
+        paddingHorizontal: 16,
         paddingTop: 0,
-        marginLeft: 30,
-        alignItems: 'center',
+        height: 110,
+    },
+    titleSection: {
+        height: 60,
+        paddingTop: 16,
         marginBottom: 0,
-        marginTop: 0,
+        justifyContent: 'center',
     },
     menuSection: {
-        paddingHorizontal: 16,
-        marginTop: Dimensions.get('window').height * 0.005,
-        marginBottom: 10,
+        height: 60,
+        marginBottom: 0,
+        justifyContent: 'center',
     },
-    contentSection: {
+    contentWrapper: {
         flex: 1,
-        marginTop: Dimensions.get('window').height * 0.065,
-        paddingHorizontal: 0,
-        paddingBottom:10
+        marginTop: 8,
     },
-});
+    playerSection: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 100,
+    },
+})
+
 

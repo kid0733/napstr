@@ -22,31 +22,51 @@ export const AlphabeticalIndex: React.FC<Props> = ({
     const [currentLetter, setCurrentLetter] = useState('');
 
     const findLetterAtPosition = useCallback((y: number) => {
-        const containerHeight = stickyHeaderIndices.length * 20; // Approximate height per letter
+        const containerHeight = ALPHABET.length * 18; // Each letter container is 18px high
         const index = Math.floor((y / containerHeight) * ALPHABET.length);
         const letter = ALPHABET[Math.min(Math.max(0, index), ALPHABET.length - 1)];
         return letter;
     }, []);
 
+    const findClosestHeader = useCallback((letter: string) => {
+        // Find the closest header that starts with this letter
+        for (let i = 0; i < stickyHeaderIndices.length; i++) {
+            const headerIndex = stickyHeaderIndices[i];
+            const headerText = data[headerIndex] as string;
+            
+            // For alphabetical sorting
+            if (headerText === letter) {
+                return headerIndex;
+            }
+            
+            // For other sorts (albums, artists, etc)
+            if (headerText.toUpperCase().startsWith(letter)) {
+                return headerIndex;
+            }
+            
+            // If we've passed where this letter should be, return the previous header
+            if (headerText.localeCompare(letter) > 0 && i > 0) {
+                return stickyHeaderIndices[i - 1];
+            }
+        }
+        
+        // If no match found, return the last header
+        return stickyHeaderIndices[stickyHeaderIndices.length - 1];
+    }, [data, stickyHeaderIndices]);
+
     const scrollToLetter = useCallback((letter: string) => {
-        const list = listRef.current;
-        if (!list) return;
-
-        // Find the index of the section header for this letter
-        const sectionIndex = stickyHeaderIndices.findIndex(
-            headerIndex => data[headerIndex] === letter
-        );
-
-        if (sectionIndex !== -1) {
-            const headerIndex = stickyHeaderIndices[sectionIndex];
-            list.scrollToIndex({
+        if (!listRef.current || !letter) return;
+        
+        const headerIndex = findClosestHeader(letter);
+        if (headerIndex !== undefined) {
+            listRef.current.scrollToIndex({
                 index: headerIndex,
-                animated: true
+                animated: false
             });
             setCurrentLetter(letter);
             onLetterChange?.(letter);
         }
-    }, [listRef, data, stickyHeaderIndices, onLetterChange]);
+    }, [findClosestHeader, onLetterChange]);
 
     const panResponder = PanResponder.create({
         onStartShouldSetPanResponder: () => true,
@@ -69,23 +89,25 @@ export const AlphabeticalIndex: React.FC<Props> = ({
 
     return (
         <View {...panResponder.panHandlers} style={styles.container}>
-            {ALPHABET.map((letter) => (
-                <View 
-                    key={letter} 
-                    style={styles.letterContainer}
-                >
-                    <Text style={[
-                        styles.letter,
-                        currentLetter === letter && isDragging && styles.letterActive
-                    ]}>
-                        {letter}
-                    </Text>
-                </View>
-            ))}
+            <View style={styles.lettersContainer}>
+                {ALPHABET.map((letter) => (
+                    <View 
+                        key={letter} 
+                        style={styles.letterContainer}
+                    >
+                        <Text style={[
+                            styles.letter,
+                            currentLetter === letter && isDragging && styles.letterActive
+                        ]}>
+                            {letter}
+                        </Text>
+                    </View>
+                ))}
+            </View>
             {isDragging && currentLetter && (
                 <View style={[
                     styles.letterThumb,
-                    { top: (ALPHABET.indexOf(currentLetter) * 20) }
+                    { top: (ALPHABET.indexOf(currentLetter) * 18) }
                 ]}>
                     <Text style={styles.letterThumbText}>
                         {currentLetter}
@@ -100,13 +122,17 @@ const styles = StyleSheet.create({
     container: {
         position: 'absolute',
         right: 4,
-        top: '10%',
-        height: '70%',
+        top: 0,
+        height: 486, // Height for 27 letters (18px each)
         width: 20,
         backgroundColor: 'rgba(0, 0, 0, 0.2)',
         borderRadius: 10,
-        justifyContent: 'center',
+    },
+    lettersContainer: {
+        flex: 1,
+        justifyContent: 'space-between',
         alignItems: 'center',
+        paddingVertical: 8,
     },
     letterContainer: {
         height: 18,

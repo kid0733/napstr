@@ -30,7 +30,7 @@ cd ios && xcodebuild -workspace napstr.xcworkspace -scheme napstr -configuration
 ```bash
 mkdir -p Payload
 cp -r napstr.xcarchive/Products/Applications/napstr.app Payload/
-zip -r app.ipa Payload
+zip -r napstr.ipa Payload
 rm -rf Payload
 ```
 

@@ -2,6 +2,8 @@ export const colors = {
 	background: '#000',
 	title: '#90a955',
 	text: '#d6ce93',
+	surface: '#1A1A1A',
+	textSecondary: '#8E8E8E',
 	// Green theme
 	greenPrimary: '#90a955',
 	greenSecondary: '#7da647',

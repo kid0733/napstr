@@ -7,6 +7,8 @@ import { colors } from '@/constants/tokens';
 import { SortOption } from './SortOptionsBar';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { AlphabeticalIndex } from './AlphabeticalIndex';
+import { AlbumSection } from './AlbumSection';
+import { ArtistSection } from './ArtistSection';
 
 const ITEM_HEIGHT = 60;
 const ITEM_MARGIN = 4;
@@ -199,20 +201,46 @@ export const SongsList: React.FC<SongsListProps> = ({
 
     const renderItem = useCallback(({ item }: { item: ListItem }) => {
         if (typeof item === 'string') {
-            // Render section header
+            if (sortBy === 'albums' as SortOption) {
+                const albumSongs = songs.filter(s => s.album === item);
+                return (
+                    <AlbumSection 
+                        title={item} 
+                        songs={albumSongs}
+                    />
+                );
+            }
+            if (sortBy === 'artists' as SortOption) {
+                const artistSongs = songs.filter(s => s.artists[0] === item);
+                return (
+                    <ArtistSection 
+                        title={item} 
+                        songs={artistSongs}
+                    />
+                );
+            }
+            // Render regular section header for other views
             return (
-                <View style={styles.sectionHeader}>
-                    <Text style={styles.sectionHeaderText}>{item}</Text>
-                </View>
+                <Text style={styles.sectionHeaderText}>{item}</Text>
             );
         }
 
-        // Render song item
+        // Don't render individual songs in album/artist view
+        if (sortBy === 'albums' as SortOption || sortBy === 'artists' as SortOption) {
+            return null;
+        }
+
+        // Get the album's songs if in album view
+        const queueSongs = sortBy === 'albums' as SortOption
+            ? songs.filter(s => s.album === item.album)
+            : songs;
+
+        // Render song item for other views
         return (
             <View style={styles.songItemContainer}>
                 <SongItem 
                     song={item}
-                    allSongs={songs}
+                    allSongs={queueSongs}
                     onPress={handlePlaySong}
                     onTogglePlay={handleTogglePlay}
                     isCurrentSong={isCurrentSongMemo(item)}
@@ -220,7 +248,7 @@ export const SongsList: React.FC<SongsListProps> = ({
                 />
             </View>
         );
-    }, [songs, handlePlaySong, handleTogglePlay, isCurrentSongMemo, isPlaying]);
+    }, [songs, handlePlaySong, handleTogglePlay, isCurrentSongMemo, isPlaying, sortBy]);
 
     const getItemType = useCallback((item: ListItem) => {
         return typeof item === 'string' ? 'sectionHeader' : 'song';
@@ -228,9 +256,9 @@ export const SongsList: React.FC<SongsListProps> = ({
 
     const listContentStyle = useMemo(() => ({
         ...styles.listContent,
-        paddingRight: sortBy === 'songs' ? 24 : 16,
+        paddingRight: 24,
         ...(contentContainerStyle || {})
-    }), [sortBy, contentContainerStyle]);
+    }), [contentContainerStyle]);
 
     return (
         <View style={styles.container}>
@@ -240,7 +268,6 @@ export const SongsList: React.FC<SongsListProps> = ({
                 renderItem={renderItem}
                 estimatedItemSize={TOTAL_ITEM_HEIGHT}
                 getItemType={getItemType}
-                stickyHeaderIndices={stickyHeaderIndices}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={listContentStyle}
                 refreshing={refreshing}
@@ -248,13 +275,11 @@ export const SongsList: React.FC<SongsListProps> = ({
                 estimatedFirstItemOffset={0}
                 drawDistance={TOTAL_ITEM_HEIGHT * 10}
             />
-            {sortBy === 'songs' && (
-                <AlphabeticalIndex 
-                    listRef={listRef}
-                    stickyHeaderIndices={stickyHeaderIndices}
-                    data={flatData}
-                />
-            )}
+            <AlphabeticalIndex 
+                listRef={listRef}
+                stickyHeaderIndices={stickyHeaderIndices}
+                data={flatData}
+            />
         </View>
     );
 };
@@ -273,19 +298,12 @@ const styles = StyleSheet.create({
         paddingBottom: 70,
         paddingHorizontal: 16,
     } as ContentStyle,
-    sectionHeader: {
-        backgroundColor: colors.background,
-        height: SECTION_HEADER_HEIGHT,
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: 'rgba(255, 255, 255, 0.1)',
-        justifyContent: 'center',
-    },
     sectionHeaderText: {
         color: colors.greenPrimary,
         fontSize: 16,
         fontWeight: '600',
+        paddingVertical: 10,
+        paddingHorizontal: 16,
     },
     songItemContainer: {
         height: ITEM_HEIGHT,
