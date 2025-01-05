@@ -2,15 +2,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { Stack } from 'expo-router'
 import { View, Text, Pressable, StyleSheet, ViewStyle, TextStyle } from 'react-native'
 import { useFonts } from 'expo-font'
-import { api } from '@/services/api'
 import { colors } from '@/constants/tokens'
 import * as Haptics from 'expo-haptics'
 import { PlayerProvider } from '@/contexts/PlayerContext'
 import { LyricsProvider } from '@/contexts/LyricsContext'
+import { UserProvider } from '@/contexts/UserContext'
 import { SplashOverlay } from '@/components/SplashOverlay/SplashOverlay'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { Tabs } from 'expo-router'
-import { Ionicons } from '@expo/vector-icons'
 
 // Define static assets
 const STATIC_ASSETS = {
@@ -51,10 +49,6 @@ export default function RootLayout() {
             try {
                 setIsRetrying(true);
                 setError(null);
-
-                // Just fetch songs to verify API connection
-                await api.songs.getAll();
-                
                 setIsReady(true);
                 setShouldInitialize(false);
             } catch (error) {
@@ -97,11 +91,13 @@ export default function RootLayout() {
         <GestureHandlerRootView style={{ flex: 1 }}>
             <View style={{ flex: 1, backgroundColor: '#000000' }}>
                 {(isReady && fontsLoaded && !error) ? (
-                    <PlayerProvider>
-                        <LyricsProvider>
-                            <Stack screenOptions={{ headerShown: false }} />
-                        </LyricsProvider>
-                    </PlayerProvider>
+                    <UserProvider>
+                        <PlayerProvider>
+                            <LyricsProvider>
+                                <Stack screenOptions={{ headerShown: false }} />
+                            </LyricsProvider>
+                        </PlayerProvider>
+                    </UserProvider>
                 ) : error ? (
                     <View style={styles.errorContainer}>
                         <Text style={[styles.errorText, { fontFamily: 'dosis_bold' }]}>{error}</Text>
@@ -134,6 +130,7 @@ export default function RootLayout() {
         </GestureHandlerRootView>
     );
 }
+
 const styles = StyleSheet.create<Styles>({
     errorContainer: {
         flex: 1,

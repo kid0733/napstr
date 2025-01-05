@@ -2,13 +2,13 @@ import axios from 'axios';
 
 // VPS Configuration
 const VPS_BASE_URL = 'https://napstr.uk';
-const API_BASE_URL = `${VPS_BASE_URL}/api/v1`;
+const API_BASE_URL = VPS_BASE_URL;
 const STREAM_BASE_URL = 'https://music.napstr.uk';
 
 // Add request timeout and better error handling
 const axiosInstance = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 5000,
+    timeout: 15000,
     headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
@@ -18,7 +18,7 @@ const axiosInstance = axios.create({
 // Create a dedicated instance for lyrics requests with text/plain content type
 const lyricsAxiosInstance = axios.create({
     baseURL: API_BASE_URL,
-    timeout: 5000,
+    timeout: 15000,
     headers: {
         'Accept': 'text/plain',
         'Content-Type': 'text/plain'
@@ -41,7 +41,7 @@ export const api = {
             const startTime = Date.now();
             console.log(`[${new Date().toISOString()}] Starting getAll request`);
             try {
-                const response = await axiosInstance.get('/songs', {
+                const response = await axiosInstance.get('/api/v1/songs', {
                     params: { page: 1, limit: 1000 }
                 });
                 console.log(`[${new Date().toISOString()}] getAll complete (${Date.now() - startTime}ms)`);
@@ -63,7 +63,7 @@ export const api = {
 
         getById: async (id: string): Promise<Song> => {
             try {
-                const response = await axiosInstance.get(`/songs/${id}`);
+                const response = await axiosInstance.get(`/api/v1/songs/${id}`);
                 return response.data;
             } catch (error) {
                 if (axios.isAxiosError(error)) {
@@ -82,11 +82,11 @@ export const api = {
             console.log(`[${new Date().toISOString()}] Starting getStreamUrl request for track: ${trackId}`);
             try {
                 // Get song details with optimized request
-                const songResponse = await axiosInstance.get(`/songs/${trackId}`);
+                const songResponse = await axiosInstance.get(`/api/v1/songs/${trackId}`);
                 const song = songResponse.data;
                 
                 // Use the direct music.napstr.uk URL for streaming
-                const streamUrl = `https://music.napstr.uk/songs/${trackId}.mp3`;
+                const streamUrl = `${STREAM_BASE_URL}/songs/${trackId}.mp3`;
                 
                 console.log(`[${new Date().toISOString()}] Stream URL:`, streamUrl);
                 console.log(`[${new Date().toISOString()}] getStreamUrl complete (${Date.now() - startTime}ms)`);
@@ -116,7 +116,7 @@ export const api = {
     lyrics: {
         getLyrics: async (trackId: string): Promise<LyricsData | null> => {
             try {
-                const response = await lyricsAxiosInstance.get(`/lyrics/${trackId}`);
+                const response = await lyricsAxiosInstance.get(`/api/v1/lyrics/${trackId}`);
                 
                 if (!response.data) {
                     return null;

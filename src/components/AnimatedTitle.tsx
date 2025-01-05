@@ -7,6 +7,7 @@ import Animated, {
     withSpring,
     runOnJS,
     useSharedValue,
+    cancelAnimation,
 } from 'react-native-reanimated';
 
 interface AnimatedTitleProps {
@@ -14,7 +15,7 @@ interface AnimatedTitleProps {
 }
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const RELATIVE_FONT_SIZE = Math.floor(SCREEN_WIDTH * 0.057); // 5.5% of screen width
+const RELATIVE_FONT_SIZE = Math.floor(SCREEN_WIDTH * 0.057);
 
 export function AnimatedTitle({ title }: AnimatedTitleProps) {
     const [layers, setLayers] = React.useState({
@@ -45,6 +46,11 @@ export function AnimatedTitle({ title }: AnimatedTitleProps) {
                 mass: 0.5,
             });
         }
+
+        // Cleanup animation when component unmounts
+        return () => {
+            cancelAnimation(containerOffset);
+        };
     }, [title]);
 
     const animatedStyle = useAnimatedStyle(() => ({
