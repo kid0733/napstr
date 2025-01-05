@@ -6,10 +6,10 @@ import { Ionicons } from '@expo/vector-icons';
 import { MaterialIcons } from '@expo/vector-icons';
 import type { ComponentProps } from 'react';
 import { FloatingOptions } from '@/components/FloatingOptions';
-import { MaximizedPlayer } from '@/components/MaximizedPlayer';
 import { Blur } from '@/components/Blur/Blur';
 import * as Haptics from 'expo-haptics';
 import { usePlayer } from '@/contexts/PlayerContext';
+import { useMaximizedPlayer } from '@/contexts/MaximizedPlayerContext';
 
 interface NowPlayingBarProps {
     onPress?: () => void;
@@ -49,7 +49,7 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         toggleRepeat
     } = usePlayer();
     const [showOptions, setShowOptions] = useState(false);
-    const [showMaximizedPlayer, setShowMaximizedPlayer] = useState(false);
+    const { showMaximizedPlayer, setShowMaximizedPlayer } = useMaximizedPlayer();
     const [isFavorite, setIsFavorite] = useState(false);
     const backgroundOpacity = useSharedValue(0.8);
 
@@ -66,13 +66,21 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
     const displaySong = currentSong || DEFAULT_SONG;
 
     const handleBarPress = () => {
-        console.log('Bar pressed, showOptions:', showOptions, 'showMaximizedPlayer:', showMaximizedPlayer);
+        console.log('=== NowPlayingBar Press Debug ===');
+        console.log('Bar pressed at:', new Date().toISOString());
+        console.log('Current state:', {
+            currentSong: currentSong?.title,
+            showMaximizedPlayer: true,
+            showOptions
+        });
         
         if (showOptions) {
+            console.log('Closing options menu');
             setShowOptions(false);
             return;
         }
         
+        console.log('Opening maximized player');
         setShowMaximizedPlayer(true);
     };
 
@@ -208,16 +216,6 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
 
     return (
         <>
-            <MaximizedPlayer
-                visible={showMaximizedPlayer}
-                onClose={handleMaximizedPlayerClose}
-                currentTrack={{
-                    title: displaySong.title,
-                    artist: Array.isArray(displaySong.artists) ? displaySong.artists.join(', ') : displaySong.artists,
-                    artwork: displaySong.album_art,
-                    track_id: (displaySong as any).track_id || 'default'
-                }}
-            />
             <FloatingOptions
                 options={options}
                 visible={showOptions}
@@ -232,6 +230,8 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
                     style={styles.pressableContainer} 
                     onPress={handleBarPress}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    onPressIn={() => console.log('Press started on NowPlayingBar')}
+                    onPressOut={() => console.log('Press ended on NowPlayingBar')}
                 >
                     <ImageBackground
                         source={require('../../../assets/grain_menu.png')}
@@ -393,6 +393,12 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.1)',
         zIndex: 999,
+        elevation: 999,
+    },
+    pressableContainer: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
     },
     backgroundImage: {
         flex: 1,
@@ -471,8 +477,5 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         flex: 1,
         marginRight: 16,
-    },
-    pressableContainer: {
-        flex: 1,
     },
 }); 

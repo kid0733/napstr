@@ -4,9 +4,7 @@ import { View, Text, Pressable, StyleSheet, ViewStyle, TextStyle } from 'react-n
 import { useFonts } from 'expo-font'
 import { colors } from '@/constants/tokens'
 import * as Haptics from 'expo-haptics'
-import { PlayerProvider } from '@/contexts/PlayerContext'
-import { LyricsProvider } from '@/contexts/LyricsContext'
-import { UserProvider } from '@/contexts/UserContext'
+import { PlayerProvider, LyricsProvider, UserProvider, MaximizedPlayerProvider } from '@/contexts'
 import { SplashOverlay } from '@/components/SplashOverlay/SplashOverlay'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 
@@ -94,7 +92,9 @@ export default function RootLayout() {
                     <UserProvider>
                         <PlayerProvider>
                             <LyricsProvider>
-                                <Stack screenOptions={{ headerShown: false }} />
+                                <MaximizedPlayerProvider>
+                                    <Stack screenOptions={{ headerShown: false }} />
+                                </MaximizedPlayerProvider>
                             </LyricsProvider>
                         </PlayerProvider>
                     </UserProvider>
