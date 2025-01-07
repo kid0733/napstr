@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1048666022327",
+    "project_id": "napstr-6f403",
+    "storage_bucket": "napstr-6f403.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1048666022327:android:cb4ef1af360c13c4c5c832",
+        "android_client_info": {
+          "package_name": "com.siddhant.napstr"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1048666022327-4i98bdta7c6s947a6of4dai7n3hbs89g.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.siddhant.napstr",
+            "certificate_hash": "cc27432ee8cd0e4a68c2c41f9a6e721f426dfbcd"
+          }
+        },
+        {
+          "client_id": "1048666022327-sdjn7ogk4s641c8su42508f6i109pjlg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDjeF0ATn1MDBPhAUvG7A-YWrIm6Ymv5Vk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1048666022327-sdjn7ogk4s641c8su42508f6i109pjlg.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

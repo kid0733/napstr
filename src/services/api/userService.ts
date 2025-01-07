@@ -2,6 +2,13 @@ import { User, UserSession } from '@/types/user';
 import { userApiClient } from './client';
 import { AxiosError } from 'axios';
 
+interface GoogleUser {
+    email: string;
+    name: string;
+    picture?: string;
+    id: string;
+}
+
 class UserService {
     private static instance: UserService;
     private constructor() {}
@@ -37,31 +44,104 @@ class UserService {
         throw new Error(`Unexpected error during ${context}`);
     }
 
-    async login(email: string, password: string): Promise<{ user: User; token: string }> {
+    async login(identifier: string, password: string): Promise<{ user: User; token: string }> {
+        console.log('[UserService] Login attempt details:', {
+            identifier,
+            isEmail: identifier.includes('@'),
+            passwordLength: password.length,
+            timestamp: new Date().toISOString()
+        });
+
         try {
-            console.log('[UserService] Attempting login for:', email);
-            const response = await userApiClient.post('/api/v1/auth/login', {
-                email,
+            // Send both fields - backend can handle which one to use
+            const payload = {
+                email: identifier.includes('@') ? identifier : '',
+                username: !identifier.includes('@') ? identifier : '',
                 password
+            };
+
+            console.log('[UserService] Sending login payload:', payload);
+
+            const response = await userApiClient.post('/api/v1/auth/login', payload);
+            
+            console.log('[UserService] Login response:', {
+                status: response.status,
+                hasData: !!response.data,
+                timestamp: new Date().toISOString()
             });
-            console.log('[UserService] Login successful');
+
+            return response.data;
+        } catch (error: any) {
+            console.error('[UserService] Login error details:', {
+                status: error.response?.status,
+                data: error.response?.data,
+                message: error.message,
+                timestamp: new Date().toISOString()
+            });
+            
+            if (error.response?.data?.error) {
+                throw new Error(error.response.data.error);
+            }
+            throw error;
+        }
+    }
+
+    async loginWithGoogle(googleSignInResult: { idToken: string; platform: string }): Promise<{ user: User; token: string }> {
+        try {
+            console.log('[UserService] Google login attempt:', {
+                platform: googleSignInResult.platform,
+                timestamp: new Date().toISOString()
+            });
+
+            const response = await userApiClient.post('/api/v1/auth/google', {
+                idToken: googleSignInResult.idToken,
+                platform: googleSignInResult.platform
+            });
+
+            console.log('[UserService] Google login response:', {
+                status: response.status,
+                hasData: !!response.data,
+                timestamp: new Date().toISOString()
+            });
+
             return response.data;
         } catch (error) {
-            this.handleError(error, 'login');
+            console.error('[UserService] Google login error:', error);
+            this.handleError(error, 'Google login');
         }
     }
 
     async register(username: string, email: string, password: string): Promise<{ user: User; token: string }> {
         try {
-            console.log('[UserService] Attempting registration for:', email);
+            console.log('[UserService] Registration attempt:', {
+                username,
+                email,
+                timestamp: new Date().toISOString()
+            });
+            
             const response = await userApiClient.post('/api/v1/auth/register', {
                 username,
                 email,
-                password
+                password,
+                profile: {
+                    displayName: username // Use username as initial display name
+                },
+                preferences: {
+                    privateProfile: false,
+                    shareListening: true,
+                    allowFriendRequests: true
+                }
             });
-            console.log('[UserService] Registration successful');
+            
+            console.log('[UserService] Registration response:', {
+                status: response.status,
+                hasData: !!response.data,
+                timestamp: new Date().toISOString()
+            });
+            
             return response.data;
         } catch (error) {
+            console.error('[UserService] Registration error:', error);
             this.handleError(error, 'registration');
         }
     }

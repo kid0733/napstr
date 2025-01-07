@@ -4,7 +4,7 @@ import { SongsList } from '@/components/Songs/SongsList';
 import { SortOptionsBar, SortOption } from '@/components/Songs/SortOptionsBar';
 import { api, Song } from '@/services/api';
 import { PlayerContext, PlayerContextType } from '@/contexts/PlayerContext';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useCallback } from 'react';
 
 export default function SongsScreen() {
     const [songs, setSongs] = useState<Song[]>([]);
@@ -26,10 +26,11 @@ export default function SongsScreen() {
 
         try {
             const response = await api.songs.getAll();
-            console.log('Loaded songs:', response.data.length);
+            const songs = response?.songs || [];
+            console.log('Loaded songs:', songs.length);
             
             // Sort songs alphabetically
-            const sortedSongs = [...response.data].sort((a, b) => 
+            const sortedSongs = [...songs].sort((a, b) => 
                 a.title.toLowerCase().localeCompare(b.title.toLowerCase())
             );
             
@@ -41,6 +42,7 @@ export default function SongsScreen() {
             }
         } catch (error) {
             console.error('Error loading songs:', error);
+            setSongs([]); // Set empty array on error
         } finally {
             setLoading(false);
             setRefreshing(false);

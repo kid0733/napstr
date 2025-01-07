@@ -6,6 +6,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { SongOptions } from '@/components/SongOptions/SongOptions';
 import DownloadManager from '@/services/DownloadManager';
+import { useLikes } from '@/contexts/LikesContext';
+import * as Haptics from 'expo-haptics';
+import Animated, {
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withSequence
+} from 'react-native-reanimated';
 
 interface SongItemProps {
     song: Song;
@@ -42,6 +50,9 @@ export const SongItem = React.memo(function SongItem({
     const [showOptions, setShowOptions] = useState(false);
     const [isDownloaded, setIsDownloaded] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
+    const { isLiked, toggleLike } = useLikes();
+    const [isLiking, setIsLiking] = useState(false);
+    const likeScale = useSharedValue(1);
 
     // Check download status on mount and when song changes
     React.useEffect(() => {
@@ -110,6 +121,34 @@ export const SongItem = React.memo(function SongItem({
         setShowOptions(false);
     }, []);
 
+    const handleLikePress = useCallback(async (e: any) => {
+        e.stopPropagation();
+        if (isLiking) return;
+
+        try {
+            setIsLiking(true);
+            
+            // Trigger haptic feedback
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            
+            // Animate heart
+            likeScale.value = withSequence(
+                withSpring(1.2, { damping: 10 }),
+                withSpring(1, { damping: 12 })
+            );
+            
+            await toggleLike(song.track_id);
+        } catch (error) {
+            console.error('Error toggling like:', error);
+        } finally {
+            setIsLiking(false);
+        }
+    }, [song.track_id, isLiking, toggleLike, likeScale]);
+
+    const likeAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: likeScale.value }]
+    }));
+
     // Memoize styles to prevent recreation
     const containerStyle = useMemo(() => [
         styles.container,
@@ -160,6 +199,19 @@ export const SongItem = React.memo(function SongItem({
                             />
                         </View>
                     )}
+                    <Animated.View style={likeAnimatedStyle}>
+                        <Pressable 
+                            style={styles.likeButton}
+                            onPress={handleLikePress}
+                            disabled={isLiking}
+                        >
+                            <Ionicons 
+                                name={isLiked(song.track_id) ? "heart" : "heart-outline"} 
+                                size={20} 
+                                color={isLiked(song.track_id) ? colors.greenPrimary : colors.greenTertiary} 
+                            />
+                        </Pressable>
+                    </Animated.View>
                     <Pressable 
                         style={styles.optionsButton}
                         onPress={handleOptionsPress}
@@ -235,5 +287,10 @@ const styles = StyleSheet.create({
     },
     downloadButton: {
         padding: 4,
+    },
+    likeButton: {
+        padding: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
     }
 }); 

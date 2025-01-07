@@ -33,6 +33,9 @@ export interface PlayerContextType {
     playSong: (song: Song, queue?: Song[]) => Promise<void>;
     seek: (position: number) => Promise<void>;
     setQueue: (queue: Song[], index: number) => void;
+    currentTrack: Song | null;
+    playTrack: (song: Song) => Promise<void>;
+    togglePlayback: () => Promise<void>;
 }
 
 const defaultContext: PlayerContextType = {
@@ -55,6 +58,9 @@ const defaultContext: PlayerContextType = {
     playSong: async () => {},
     seek: async () => {},
     setQueue: () => {},
+    currentTrack: null,
+    playTrack: async () => {},
+    togglePlayback: async () => {},
 };
 
 export const PlayerContext = createContext<PlayerContextType>(defaultContext);
@@ -283,6 +289,75 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, [state.isShuffled, state.queue, state.currentIndex]);
 
+    const playTrack = useCallback(async (song: Song) => {
+        try {
+            console.log('PlayTrack called:', {
+                songId: song.track_id,
+                songTitle: song.title,
+                audioUrl: `https://music.napstr.uk/songs/${song.track_id}.mp3`
+            });
+
+            setIsLoading(true);
+            loadingRef.current = true;
+
+            // Reset the queue
+            console.log('Resetting track player queue');
+            await TrackPlayer.reset();
+
+            // Prepare the track
+            const track = {
+                id: song.track_id,
+                url: `https://music.napstr.uk/songs/${song.track_id}.mp3`,
+                title: song.title,
+                artist: song.artists.join(', '),
+                artwork: song.album_art,
+                duration: song.duration_ms / 1000,
+            };
+
+            console.log('Adding track to player:', track);
+            await TrackPlayer.add(track);
+
+            console.log('Starting playback');
+            await TrackPlayer.play();
+
+            console.log('Updating player state');
+            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
+            dispatch({ type: 'SET_PLAYING', payload: true });
+
+            console.log('Playback started successfully');
+        } catch (error) {
+            console.error('Detailed error in playTrack:', {
+                error,
+                songId: song.track_id,
+                songTitle: song.title
+            });
+            throw error;
+        } finally {
+            setIsLoading(false);
+            loadingRef.current = false;
+        }
+    }, []);
+
+    const togglePlayback = useCallback(async () => {
+        try {
+            console.log('TogglePlayback called');
+            const playerState = await TrackPlayer.getState();
+            console.log('Current player state:', playerState);
+
+            if (playerState === State.Playing) {
+                console.log('Pausing playback');
+                await TrackPlayer.pause();
+            } else {
+                console.log('Resuming playback');
+                await TrackPlayer.play();
+            }
+            console.log('Toggle playback successful');
+        } catch (error) {
+            console.error('Error in togglePlayback:', error);
+            throw error;
+        }
+    }, []);
+
     const value = {
         currentSong: state.currentSong,
         isPlaying: state.isPlaying,
@@ -312,6 +387,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             dispatch({ type: 'SET_QUEUE', payload: { queue, currentIndex: index } });
             dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
         },
+        currentTrack: null,
+        playTrack,
+        togglePlayback,
     };
 
     return (

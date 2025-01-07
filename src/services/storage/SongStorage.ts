@@ -258,4 +258,25 @@ export class SongStorage {
         const metadataArray = Array.from(this.metadata.values());
         await AsyncStorage.setItem(SONG_METADATA_KEY, JSON.stringify(metadataArray));
     }
+
+    async getSong(trackId: string): Promise<Song | null> {
+        try {
+            const songData = await AsyncStorage.getItem(`song:${trackId}`);
+            return songData ? JSON.parse(songData) : null;
+        } catch (error) {
+            console.error('Error getting song from storage:', error);
+            return null;
+        }
+    }
+
+    async isDownloaded(trackId: string): Promise<boolean> {
+        try {
+            const downloadedSongs = await AsyncStorage.getItem('downloadedSongs');
+            const downloadedSet = downloadedSongs ? new Set(JSON.parse(downloadedSongs)) : new Set();
+            return downloadedSet.has(trackId);
+        } catch (error) {
+            console.error('Error checking download status:', error);
+            return false;
+        }
+    }
 } 

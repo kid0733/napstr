@@ -15,13 +15,21 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.siddhant.napstr",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "UIBackgroundModes": [
           "audio"
         ],
         "NSMotionUsageDescription": "Allow Napstr to access your device motion for interactive UI effects",
         "NSMicrophoneUsageDescription": "This app does not require microphone access.",
-        "kTCCServiceMediaLibrary": "This app requires access to control media playback."
+        "kTCCServiceMediaLibrary": "This app requires access to control media playback.",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.227082141491-cc43ejoot1jdtd6hqjs0hapifg4tiod5"
+            ]
+          }
+        ]
       },
       "appleTeamId": "U63RPYT5TG"
     },
@@ -30,31 +38,26 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.karki0733.napstr",
+      "package": "com.siddhant.napstr",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
-        "android.permission.HIGH_SAMPLING_RATE_SENSORS",
-        "android.permission.INTERNET",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.WAKE_LOCK"
-      ],
-      "versionCode": 1
+        "android.permission.INTERNET"
+      ]
     },
     "web": {
       "favicon": "./assets/icon.png"
     },
     "plugins": [
       "expo-router",
+      "@react-native-google-signin/google-signin",
       [
-        "expo-av",
+        "expo-build-properties",
         {
-          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone."
-        }
-      ],
-      [
-        "expo-sensors",
-        {
-          "motionPermission": "Allow Napstr to access your device motion for interactive UI effects"
+          "android": {
+            "compileSdkVersion": 33,
+            "targetSdkVersion": 33,
+            "buildToolsVersion": "33.0.0"
+          }
         }
       ]
     ],

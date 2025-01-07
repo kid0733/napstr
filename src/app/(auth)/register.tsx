@@ -3,6 +3,8 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingVi
 import { Link, useRouter } from 'expo-router';
 import { colors } from '@/constants/tokens';
 import { useUser } from '@/contexts/UserContext';
+import { Background } from '@/components/Background';
+import { useGoogleAuthSession } from '../../services/googleAuthSession';
 
 export default function RegisterScreen() {
     const [username, setUsername] = useState('');
@@ -10,8 +12,9 @@ export default function RegisterScreen() {
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const { register } = useUser();
+    const { register, loginWithCredentials } = useUser();
     const router = useRouter();
+    const { signIn } = useGoogleAuthSession();
 
     const handleRegister = async () => {
         if (!username || !email || !password) {
@@ -31,14 +34,33 @@ export default function RegisterScreen() {
         }
     };
 
+    const handleGoogleSignIn = async () => {
+        try {
+            setIsLoading(true);
+            setError('');
+            const { user, token } = await signIn();
+            await loginWithCredentials(user, token);
+            router.replace('/(tabs)/(songs)');
+        } catch (error) {
+            console.error('Google sign in error:', error);
+            setError('Google sign in failed');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     return (
         <KeyboardAvoidingView 
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.container}
         >
+            <Background />
             <View style={styles.content}>
-                <Text style={styles.title}>Create Account</Text>
-                
+                <View style={styles.titleContainer}>
+                    <Text style={styles.welcomeText}>Create Account</Text>
+                    <Text style={styles.appTitle}>napstr</Text>
+                </View>
+
                 {error ? <Text style={styles.error}>{error}</Text> : null}
 
                 <TextInput
@@ -79,6 +101,22 @@ export default function RegisterScreen() {
                     </Text>
                 </TouchableOpacity>
 
+                <View style={styles.divider}>
+                    <View style={styles.dividerLine} />
+                    <Text style={styles.dividerText}>or</Text>
+                    <View style={styles.dividerLine} />
+                </View>
+
+                <TouchableOpacity 
+                    style={[styles.googleButton, isLoading && styles.buttonDisabled]}
+                    onPress={handleGoogleSignIn}
+                    disabled={isLoading}
+                >
+                    <Text style={styles.buttonText}>
+                        {isLoading ? 'Signing in...' : 'Sign up with Google'}
+                    </Text>
+                </TouchableOpacity>
+
                 <View style={styles.footer}>
                     <Text style={styles.footerText}>Already have an account? </Text>
                     <Link href="/(auth)/login" asChild>
@@ -95,46 +133,60 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: colors.background,
+        backgroundColor: 'transparent',
     },
     content: {
         flex: 1,
         justifyContent: 'center',
-        padding: 20,
+        padding: 32,
+        backgroundColor: 'transparent',
     },
-    title: {
-        fontSize: 32,
-        color: colors.title,
-        marginBottom: 40,
-        textAlign: 'center',
-        fontFamily: 'dosis_bold',
+    titleContainer: {
+        alignItems: 'center',
+        marginBottom: 48,
+    },
+    welcomeText: {
+        fontSize: 28,
+        color: '#B8E4FF',
+        fontFamily: 'dosis_medium',
+        marginBottom: 8,
+        opacity: 0.9,
+    },
+    appTitle: {
+        fontSize: 52,
+        color: '#9EECFF',
+        fontFamily: 'Title',
+        opacity: 0.95,
     },
     input: {
-        backgroundColor: colors.surface,
-        borderRadius: 8,
-        padding: 15,
+        backgroundColor: 'rgba(0, 0, 0, 0.35)',
+        borderRadius: 12,
+        padding: 16,
         marginBottom: 16,
-        color: colors.text,
+        color: '#E4F5FF',
         fontFamily: 'dosis_medium',
+        fontSize: 16,
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.1)',
     },
     button: {
-        backgroundColor: colors.greenPrimary,
-        borderRadius: 8,
-        padding: 15,
+        backgroundColor: '#9EECFF',
+        borderRadius: 12,
+        padding: 16,
         alignItems: 'center',
-        marginTop: 10,
+        marginTop: 16,
     },
     buttonDisabled: {
         opacity: 0.7,
     },
     buttonText: {
-        color: colors.background,
-        fontSize: 16,
+        color: '#16191E',
+        fontSize: 18,
         fontWeight: '600',
         fontFamily: 'dosis_bold',
     },
     error: {
-        color: colors.redPrimary,
+        color: '#FF9EAE',
         marginBottom: 20,
         textAlign: 'center',
         fontFamily: 'dosis_medium',
@@ -142,14 +194,38 @@ const styles = StyleSheet.create({
     footer: {
         flexDirection: 'row',
         justifyContent: 'center',
-        marginTop: 20,
+        marginTop: 24,
     },
     footerText: {
-        color: colors.textSecondary,
+        color: '#B8E4FF',
         fontFamily: 'dosis_medium',
+        opacity: 0.8,
     },
     link: {
-        color: colors.greenPrimary,
+        color: '#9EECFF',
         fontFamily: 'dosis_bold',
+    },
+    googleButton: {
+        backgroundColor: '#9EECFF',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
+        marginTop: 16,
+    },
+    divider: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginVertical: 20,
+    },
+    dividerLine: {
+        flex: 1,
+        height: 1,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    },
+    dividerText: {
+        color: '#B8E4FF',
+        marginHorizontal: 10,
+        fontFamily: 'dosis_medium',
+        opacity: 0.8,
     }
 }); 

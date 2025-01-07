@@ -1,15 +1,17 @@
 import { Tabs } from 'expo-router'
-import { MaterialIcons } from '@expo/vector-icons'
+import { MaterialIcons, Ionicons } from '@expo/vector-icons'
 import { colors } from '@/constants/tokens'
 import { NowPlayingBar } from '@/components/NowPlayingBar'
-import { View, StyleSheet } from 'react-native'
+import { View, StyleSheet, Pressable } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { NavigationBar } from '@/components/FloatingActionBar/NavigationBar'
 import { AnimatedTitle } from '@/components/AnimatedTitle'
 import { usePathname } from 'expo-router'
+import { useUser } from '@/contexts/UserContext'
 
 export default function TabsLayout() {
     const pathname = usePathname()
+    const { logout } = useUser()
 
     let currentTitle = 'Songs'
     if (pathname?.includes('/favourites')) {
@@ -20,6 +22,16 @@ export default function TabsLayout() {
         currentTitle = 'Social'
     } else if (pathname?.includes('/(debug)')) {
         currentTitle = 'Debug'
+    } else if (pathname?.includes('/(home)')) {
+        currentTitle = 'Home'
+    }
+
+    const handleLogout = async () => {
+        try {
+            await logout()
+        } catch (error) {
+            console.error('Error logging out:', error)
+        }
     }
 
     return (
@@ -29,6 +41,12 @@ export default function TabsLayout() {
                 {/* Title Section */}
                 <View style={layoutStyles.titleSection}>
                     <AnimatedTitle title={currentTitle} />
+                    <Pressable 
+                        onPress={handleLogout}
+                        style={layoutStyles.logoutButton}
+                    >
+                        <Ionicons name="log-out-outline" size={24} color={colors.greenTertiary} />
+                    </Pressable>
                 </View>
 
                 {/* Navigation Menu */}
@@ -45,6 +63,12 @@ export default function TabsLayout() {
                         tabBarStyle: { display: 'none' }
                     }}
                 >
+                    <Tabs.Screen
+                        name="(home)/index"
+                        options={{
+                            title: 'Home',
+                        }}
+                    />
                     <Tabs.Screen
                         name="(songs)"
                         options={{
@@ -100,7 +124,10 @@ const layoutStyles = StyleSheet.create({
         height: 60,
         paddingTop: 16,
         marginBottom: 0,
-        justifyContent: 'center',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
     },
     menuSection: {
         height: 60,
@@ -117,6 +144,9 @@ const layoutStyles = StyleSheet.create({
         left: 0,
         right: 0,
         zIndex: 100,
+    },
+    logoutButton: {
+        padding: 8,
     },
 })
 

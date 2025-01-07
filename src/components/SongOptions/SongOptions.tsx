@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Dimensions, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
@@ -14,6 +14,8 @@ import Animated, {
 import { Song } from '@/services/api';
 import { api } from '@/services/api';
 import { SongStorage } from '@/services/storage/SongStorage';
+import { useLikes } from '@/contexts/LikesContext';
+import * as Haptics from 'expo-haptics';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SLIDE_THRESHOLD = 50;
@@ -81,6 +83,8 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose, song
     const isScrolledToTop = useSharedValue(true);
     const touchStartY = useRef(0);
     const songStorage = SongStorage.getInstance();
+    const { isLiked, toggleLike } = useLikes();
+    const [isLiking, setIsLiking] = useState(false);
 
     useEffect(() => {
         if (visible) {
@@ -142,15 +146,39 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose, song
         if (optionId === 'download') {
             try {
                 const streamData = await api.songs.getStreamUrl(song.track_id);
-                await songStorage.downloadSong(song.track_id, streamData.url);
+                await songStorage.downloadSong(song.track_id, streamData);
                 // TODO: Show success toast/notification
             } catch (error) {
                 console.error('Failed to download song:', error);
                 // TODO: Show error toast/notification
             }
+        } else if (optionId === 'like') {
+            try {
+                setIsLiking(true);
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                await toggleLike(song.track_id);
+            } catch (error) {
+                console.error('Failed to toggle like:', error);
+            } finally {
+                setIsLiking(false);
+            }
         }
         onClose();
     };
+
+    const quickActions = useMemo(() => ({
+        title: 'Quick Actions',
+        items: [
+            { id: 'add_to_queue', title: 'Play Next', icon: 'play-skip-forward' },
+            { 
+                id: 'like', 
+                title: isLiked(song.track_id) ? 'Unlike Song' : 'Like Song', 
+                icon: isLiked(song.track_id) ? 'heart' : 'heart-outline' 
+            },
+            { id: 'share', title: 'Share', icon: 'share' },
+            { id: 'karaoke', title: 'Start Karaoke Mode', icon: 'mic' },
+        ]
+    }), [song.track_id, isLiked]);
 
     return (
         <Modal
@@ -186,6 +214,29 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose, song
                             onTouchStart={handleTouchStart}
                             onTouchMove={handleTouchMove}
                         >
+                            <View key={quickActions.title} style={styles.categoryContainer}>
+                                <Text style={styles.categoryTitle}>{quickActions.title}</Text>
+                                <View style={styles.optionsContainer}>
+                                    {quickActions.items.map((option) => (
+                                        <Pressable
+                                            key={option.id}
+                                            style={styles.option}
+                                            onPress={() => handleOptionPress(option.id)}
+                                        >
+                                            <Ionicons 
+                                                name={option.icon as any} 
+                                                size={24} 
+                                                color={
+                                                    option.id === 'like' && isLiked(song.track_id)
+                                                        ? colors.greenPrimary
+                                                        : colors.greenTertiary
+                                                } 
+                                            />
+                                            <Text style={styles.optionText}>{option.title}</Text>
+                                        </Pressable>
+                                    ))}
+                                </View>
+                            </View>
                             {Object.values(SONG_OPTIONS).map((category) => (
                                 <View key={category.title} style={styles.categoryContainer}>
                                     <Text style={styles.categoryTitle}>{category.title}</Text>

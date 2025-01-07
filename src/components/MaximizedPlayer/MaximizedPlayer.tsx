@@ -1,4 +1,4 @@
-import React, { memo, useState, useCallback, useEffect, useRef } from 'react';
+import React, { memo, useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { View, Text, Image, StyleSheet, Dimensions, Pressable, Platform, ScrollView } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
@@ -24,10 +24,17 @@ import { SongOptions } from '@/components/SongOptions/SongOptions';
 import { Song, LyricsData, LyricsLine } from '@/services/api';
 import { Lyrics } from '@/components/Lyrics/Lyrics';
 import { useLyrics } from '@/contexts/LyricsContext';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '@/types/navigation';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const LINE_HEIGHT = SCREEN_WIDTH * 0.25;
+
+const appIcon = require('../../../assets/icon.png');
+
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 interface TrackInfo {
     title: string;
@@ -150,6 +157,11 @@ const QueueItem = memo(function QueueItem({
     isPlaying: boolean;
     onPress: () => void;
 }) {
+    const titleStyle = useMemo(() => [
+        styles.queueItemTitle,
+        isPlaying && styles.queueItemTitleActive
+    ], [isPlaying]);
+
     return (
         <>
             <Pressable 
@@ -162,10 +174,7 @@ const QueueItem = memo(function QueueItem({
                 />
                 <View style={styles.queueItemInfo}>
                     <Text 
-                        style={[
-                            styles.queueItemTitle,
-                            isPlaying && styles.queueItemTitleActive
-                        ]} 
+                        style={titleStyle}
                         numberOfLines={1}
                     >
                         {title}
@@ -318,20 +327,38 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
     const flipAnimation = useSharedValue(0);
     const lyricsTranslateY = useSharedValue(0);
 
-    const [imageLoaded, setImageLoaded] = useState(false);
-    const fadeAnim = useSharedValue(0);
+    const [imageLoaded, setImageLoaded] = useState(true);
+    const fadeAnim = useSharedValue(1);
 
-    // Preload image when track changes
+    const navigation = useNavigation<NavigationProp>();
+
+    // Update image loading effect
     useEffect(() => {
         if (currentTrack?.artwork) {
+            fadeAnim.value = 0;
             setImageLoaded(false);
-            Image.prefetch(currentTrack.artwork).then(() => {
-                setImageLoaded(true);
-                fadeAnim.value = withTiming(1, {
-                    duration: 300,
-                    easing: Easing.bezier(0.4, 0, 0.2, 1)
+            
+            Image.prefetch(currentTrack.artwork)
+                .then(() => {
+                    setImageLoaded(true);
+                    fadeAnim.value = withTiming(1, {
+                        duration: 300,
+                        easing: Easing.bezier(0.4, 0, 0.2, 1)
+                    });
+                })
+                .catch(() => {
+                    // If loading fails, keep showing the app icon
+                    setImageLoaded(false);
+                    fadeAnim.value = withTiming(1, {
+                        duration: 300,
+                        easing: Easing.bezier(0.4, 0, 0.2, 1)
+                    });
                 });
-            });
+
+            return () => {
+                fadeAnim.value = 1;
+                setImageLoaded(true);
+            };
         }
     }, [currentTrack?.artwork]);
 
@@ -343,13 +370,26 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         if (!lyrics?.lines) return -1;
         
         const positionMs = (currentPosition * 1000) + 250;
-        const index = lyrics.lines.findIndex((line, idx) => {
-            const isCurrentLine = positionMs >= line.startTimeMs && 
-                (idx === lyrics.lines.length - 1 || positionMs < lyrics.lines[idx + 1].startTimeMs);
-            return isCurrentLine;
-        });
+        let start = 0;
+        let end = lyrics.lines.length - 1;
         
-        return index;
+        while (start <= end) {
+            const mid = Math.floor((start + end) / 2);
+            const line = lyrics.lines[mid];
+            const nextLine = lyrics.lines[mid + 1];
+            
+            if (positionMs >= line.startTimeMs && (!nextLine || positionMs < nextLine.startTimeMs)) {
+                return mid;
+            }
+            
+            if (positionMs < line.startTimeMs) {
+                end = mid - 1;
+            } else {
+                start = mid + 1;
+            }
+        }
+        
+        return -1;
     }, [lyrics]);
 
     const lyricsAnimatedStyle = useAnimatedStyle(() => ({
@@ -474,8 +514,8 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             context.startY = translateY.value;
         },
         onActive: (event, context) => {
-            // Ensure we only allow downward swipes and limit upward movement
-            const newTranslateY = context.startY + Math.max(0, event.translationY);
+            const resistance = Math.abs(event.velocityY) > 1000 ? 0.5 : 1;
+            const newTranslateY = context.startY + Math.max(0, event.translationY * resistance);
             translateY.value = newTranslateY;
         },
         onEnd: (event) => {
@@ -598,6 +638,25 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         })()} 
     ] : [];
 
+    // Convert TrackInfo to Song for playlist
+    const trackToSong = (track: TrackInfo): Song => ({
+        track_id: track.track_id,
+        spotify_id: '', // Not needed for playlist operations
+        title: track.title,
+        artists: [track.artist],
+        album: '',
+        duration_ms: 0,
+        explicit: false,
+        album_art: track.artwork,
+        isrc: '',
+        spotify_url: '',
+        preview_url: '',
+        genres: [],
+        audio_format: 'mp3',
+        added_at: new Date().toISOString(),
+        popularity: 0
+    });
+
     const renderItem = useCallback(({ item, index }: { item: any, index: number }) => {
         if (!currentTrack) return null;
         
@@ -608,7 +667,7 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                     <View style={styles.artworkContainer}>
                         <Animated.View style={[styles.artworkWrapper, frontAnimatedStyle]}>
                             <Image 
-                                source={{ uri: currentTrack.artwork }} 
+                                source={imageLoaded ? { uri: currentTrack.artwork } : appIcon}
                                 style={styles.artwork}
                                 resizeMode="cover"
                             />
@@ -616,7 +675,7 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                         <Animated.View style={[styles.artworkWrapper, backAnimatedStyle]}>
                             <View style={styles.lyricsWrapper}>
                                 <Image 
-                                    source={{ uri: currentTrack.artwork }}
+                                    source={imageLoaded ? { uri: currentTrack.artwork } : appIcon}
                                     style={[StyleSheet.absoluteFill]}
                                     blurRadius={50}
                                     resizeMode="cover"
@@ -663,6 +722,19 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                         <Pressable style={styles.controlButton}>
                             <Ionicons name="heart-outline" size={24} color={colors.greenTertiary} />
                         </Pressable>
+                        <Pressable 
+                            style={styles.controlButton}
+                            onPress={() => {
+                                if (currentTrack) {
+                                    navigation.navigate('PlaylistOptions', {
+                                        songs: [trackToSong(currentTrack)],
+                                        title: 'Add to Playlist'
+                                    });
+                                }
+                            }}
+                        >
+                            <Ionicons name="list" size={24} color={colors.greenTertiary} />
+                        </Pressable>
                         <Pressable style={styles.controlButton}>
                             <Ionicons name="share-outline" size={24} color={colors.greenTertiary} />
                         </Pressable>
@@ -679,16 +751,21 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                 return (
                     <View style={styles.queueContainer}>
                         <Text style={styles.queueHeader}>Up Next</Text>
-                        {section.data.map((queueItem) => (
-                            <QueueItem
-                                key={queueItem.track_id}
-                                title={queueItem.title}
-                                artist={queueItem.artist}
-                                artwork={queueItem.artwork}
-                                isPlaying={false}
-                                onPress={() => handleQueueItemPress(queueItem.fullSong)}
-                            />
-                        ))}
+                        <FlashList
+                            data={sections[5].data}
+                            renderItem={({ item }) => (
+                                <QueueItem
+                                    title={item.title}
+                                    artist={item.artist}
+                                    artwork={item.artwork}
+                                    isPlaying={false}
+                                    onPress={() => handleQueueItemPress(item.fullSong)}
+                                />
+                            )}
+                            estimatedItemSize={70}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.listContent}
+                        />
                     </View>
                 );
             default:
@@ -711,7 +788,7 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                 >
                     {currentTrack && (
                         <Animated.Image 
-                            source={{ uri: currentTrack.artwork }}
+                            source={imageLoaded ? { uri: currentTrack.artwork } : appIcon}
                             style={[StyleSheet.absoluteFill, fadeStyle]}
                             blurRadius={50}
                             resizeMode="cover"
@@ -766,7 +843,7 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                         {renderItem({ item: sections[4], index: 4 })}
                         
                         {/* Queue Section */}
-                        <View style={[styles.queueContainer, { height: SCREEN_HEIGHT * 0.4 }]}>
+                        <View style={styles.queueContainer}>
                             <Text style={styles.queueHeader}>Up Next</Text>
                             <FlashList
                                 data={sections[5].data}
@@ -781,6 +858,7 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                                 )}
                                 estimatedItemSize={70}
                                 showsVerticalScrollIndicator={false}
+                                contentContainerStyle={styles.listContent}
                             />
                         </View>
                     </ScrollView>
@@ -921,7 +999,7 @@ const styles = StyleSheet.create({
     queueContainer: {
         paddingHorizontal: '5%',
         marginTop: '5%',
-        height: SCREEN_HEIGHT * 0.4,
+        flex: 1,
     },
     queueHeader: {
         fontSize: SCREEN_WIDTH * 0.045,

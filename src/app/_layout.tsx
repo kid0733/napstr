@@ -4,9 +4,10 @@ import { View, Text, Pressable, StyleSheet, ViewStyle, TextStyle } from 'react-n
 import { useFonts } from 'expo-font'
 import { colors } from '@/constants/tokens'
 import * as Haptics from 'expo-haptics'
-import { PlayerProvider, LyricsProvider, UserProvider, MaximizedPlayerProvider } from '@/contexts'
+import { PlayerProvider, LyricsProvider, UserProvider, MaximizedPlayerProvider, LikesProvider } from '@/contexts'
 import { SplashOverlay } from '@/components/SplashOverlay/SplashOverlay'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
 
 // Define static assets
 const STATIC_ASSETS = {
@@ -90,13 +91,17 @@ export default function RootLayout() {
             <View style={{ flex: 1, backgroundColor: '#000000' }}>
                 {(isReady && fontsLoaded && !error) ? (
                     <UserProvider>
-                        <PlayerProvider>
-                            <LyricsProvider>
-                                <MaximizedPlayerProvider>
-                                    <Stack screenOptions={{ headerShown: false }} />
-                                </MaximizedPlayerProvider>
-                            </LyricsProvider>
-                        </PlayerProvider>
+                        <LikesProvider>
+                            <PlayerProvider>
+                                <LyricsProvider>
+                                    <MaximizedPlayerProvider>
+                                        <BottomSheetModalProvider>
+                                            <Stack screenOptions={{ headerShown: false }} />
+                                        </BottomSheetModalProvider>
+                                    </MaximizedPlayerProvider>
+                                </LyricsProvider>
+                            </PlayerProvider>
+                        </LikesProvider>
                     </UserProvider>
                 ) : error ? (
                     <View style={styles.errorContainer}>

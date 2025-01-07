@@ -1,6 +1,5 @@
 // metro.config.js
 const { getDefaultConfig } = require('expo/metro-config');
-const { wrapWithReanimatedMetroConfig } = require('react-native-reanimated/metro-config');
 
 const config = getDefaultConfig(__dirname);
 
@@ -16,4 +15,7 @@ config.resolver.assetExts.push(
   'webp'
 );
 
-module.exports = wrapWithReanimatedMetroConfig(config);
+// Add support for Reanimated
+config.resolver.sourceExts = [...config.resolver.sourceExts, 'mjs'];
+
+module.exports = config;

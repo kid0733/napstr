@@ -25,6 +25,7 @@ export const colors = {
 	orangePrimary: '#fb8500',
 	orangeSecondary: '#ffb703',
 	orangeTertiary: '#ffd60a',
+	error: '#ff4444',
 }
 
 export const fontSize = {

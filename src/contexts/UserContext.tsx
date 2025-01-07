@@ -3,12 +3,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '@/types/user';
 import { userService } from '@/services/api/userService';
 import { useRouter, useSegments } from 'expo-router';
+import { googleAuth } from '@/services/googleAuth';
 
 interface UserContextType {
     user: User | null;
     isAuthenticated: boolean;
     isLoading: boolean;
-    login: (email: string, password: string) => Promise<void>;
+    login: (identifier: string, password: string) => Promise<void>;
+    loginWithCredentials: (user: User, token: string) => Promise<void>;
     register: (username: string, email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
 }
@@ -30,47 +32,41 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const router = useRouter();
 
     useEffect(() => {
-        loadStoredUser();
+        checkAuth();
     }, []);
 
-    // Handle routing based on auth state
-    useEffect(() => {
-        if (isLoading) return;
-
-        const inAuthGroup = segments[0] === '(auth)';
-        
-        if (!user && !inAuthGroup) {
-            // Redirect to login if not authenticated
-            router.replace('/(auth)/login');
-        } else if (user && inAuthGroup) {
-            // Redirect to main app if authenticated
-            router.replace('/(tabs)/(songs)');
-        }
-    }, [user, segments, isLoading]);
-
-    const loadStoredUser = async () => {
+    const checkAuth = async () => {
         try {
-            const storedUser = await AsyncStorage.getItem('user');
-            const storedToken = await AsyncStorage.getItem('token');
+            const token = await AsyncStorage.getItem('userToken');
+            const userData = await AsyncStorage.getItem('userData');
             
-            if (storedUser && storedToken) {
-                setUser(JSON.parse(storedUser));
+            if (token && userData) {
+                setUser(JSON.parse(userData));
             }
         } catch (error) {
-            console.error('Error loading stored user:', error);
+            console.error('Error checking auth:', error);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const login = async (email: string, password: string) => {
+    const login = async (identifier: string, password: string) => {
         try {
-            const { user: userData, token } = await userService.login(email, password);
+            const { user: userData, token } = await userService.login(identifier, password);
+            await AsyncStorage.setItem('userToken', token);
+            await AsyncStorage.setItem('userData', JSON.stringify(userData));
             setUser(userData);
-            await AsyncStorage.setItem('user', JSON.stringify(userData));
-            await AsyncStorage.setItem('token', token);
         } catch (error) {
-            console.error('Login error:', error);
+            throw error;
+        }
+    };
+
+    const loginWithCredentials = async (userData: User, token: string) => {
+        try {
+            await AsyncStorage.setItem('userToken', token);
+            await AsyncStorage.setItem('userData', JSON.stringify(userData));
+            setUser(userData);
+        } catch (error) {
             throw error;
         }
     };
@@ -78,37 +74,49 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const register = async (username: string, email: string, password: string) => {
         try {
             const { user: userData, token } = await userService.register(username, email, password);
+            await AsyncStorage.setItem('userToken', token);
+            await AsyncStorage.setItem('userData', JSON.stringify(userData));
             setUser(userData);
-            await AsyncStorage.setItem('user', JSON.stringify(userData));
-            await AsyncStorage.setItem('token', token);
         } catch (error) {
-            console.error('Registration error:', error);
             throw error;
         }
     };
 
     const logout = async () => {
         try {
-            await AsyncStorage.multiRemove(['user', 'token']);
+            // Sign out from Google if user was signed in with Google
+            try {
+                await googleAuth.signOut();
+            } catch (error) {
+                console.warn('Error signing out from Google:', error);
+                // Continue with logout even if Google sign-out fails
+            }
+
+            // Clear local storage
+            await AsyncStorage.removeItem('userToken');
+            await AsyncStorage.removeItem('userData');
             setUser(null);
+
+            // Navigate to login screen
             router.replace('/(auth)/login');
         } catch (error) {
-            console.error('Logout error:', error);
+            console.error('Error during logout:', error);
             throw error;
         }
     };
 
+    const value = {
+        user,
+        isAuthenticated: !!user,
+        isLoading,
+        login,
+        loginWithCredentials,
+        register,
+        logout,
+    };
+
     return (
-        <UserContext.Provider
-            value={{
-                user,
-                isAuthenticated: !!user,
-                isLoading,
-                login,
-                register,
-                logout
-            }}
-        >
+        <UserContext.Provider value={value}>
             {children}
         </UserContext.Provider>
     );

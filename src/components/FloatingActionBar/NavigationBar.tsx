@@ -5,6 +5,7 @@ import { FloatingActionBar } from './FloatingActionBar'
 
 const navigationConfig = {
     routes: [
+        '/(tabs)/(home)',
         '/(tabs)/(songs)',
         '/(tabs)/favourites',
         '/(tabs)/playlists',
@@ -12,6 +13,7 @@ const navigationConfig = {
         '/(tabs)/(debug)'
     ] as const,
     items: [
+        { icon: 'home', activeColor: colors.greenQuaternary, color: 'rgba(255,255,255,0.8)', activeBackgroundColor: colors.greenTertiary },
         { icon: 'musical-notes', activeColor: colors.greenQuaternary, color: 'rgba(255,255,255,0.8)', activeBackgroundColor: colors.greenTertiary },
         { icon: 'heart', activeColor: colors.greenQuaternary, color: 'rgba(255,255,255,0.8)', activeBackgroundColor: colors.greenTertiary },
         { icon: 'list', activeColor: colors.greenQuaternary, color: 'rgba(255,255,255,0.8)', activeBackgroundColor: colors.greenTertiary },
