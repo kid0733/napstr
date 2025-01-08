@@ -36,6 +36,7 @@ export interface PlayerContextType {
     setQueue: (queue: Song[], index: number) => void;
     currentTrack: Song | null;
     togglePlayback: () => Promise<void>;
+    addToUpNext: (song: Song) => void;
 }
 
 const defaultContext: PlayerContextType = {
@@ -60,6 +61,7 @@ const defaultContext: PlayerContextType = {
     setQueue: () => {},
     currentTrack: null,
     togglePlayback: async () => {},
+    addToUpNext: () => {},
 };
 
 export const PlayerContext = createContext<PlayerContextType>(defaultContext);
@@ -215,15 +217,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             // Update state
             dispatch({ type: 'SET_CURRENT_SONG', payload: song });
             
-            // Initialize queue with provided songs or fetch alphabetically
             let initialQueue: Song[];
             if (newQueue) {
-                initialQueue = [song, ...newQueue.filter(s => s.track_id !== song.track_id)];
+                // If song is in current queue, clean up everything before it
+                const songIndexInQueue = state.queue.findIndex(s => s.track_id === song.track_id);
+                if (songIndexInQueue !== -1) {
+                    // Remove all songs before the selected song
+                    initialQueue = state.queue.slice(songIndexInQueue);
+                } else {
+                    initialQueue = [song, ...newQueue.filter(s => s.track_id !== song.track_id)];
+                }
             } else {
-                // Get alphabetically sorted songs starting from current song's title
+                // Get initial songs
                 const response = await api.songs.getAll({ 
-                    sort: 'alphabetical',
-                    fromTitle: song.title,
+                    sort: state.isShuffled ? 'smart' : 'alphabetical',
+                    fromSongId: song.track_id,
                     limit: 50
                 });
                 
@@ -234,34 +242,18 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                 ];
             }
 
-            // Try to get recommendations if we have network
+            // Try to get more songs if needed
             try {
-                if (!state.isShuffled) {
-                    // In non-shuffled mode, get more alphabetical songs for continuation
-                    const lastSong = initialQueue[initialQueue.length - 1];
-                    const nextAlphabetical = await api.songs.getAll({
-                        sort: 'alphabetical',
-                        fromTitle: lastSong.title,
-                        limit: 25,
+                if (initialQueue.length < 50) {
+                    const additionalResponse = await api.songs.getAll({ 
+                        sort: state.isShuffled ? 'smart' : 'alphabetical',
+                        fromSongId: initialQueue[initialQueue.length - 1].track_id,
+                        limit: 50 - initialQueue.length,
                         after: true
                     });
                     
-                    if (nextAlphabetical.songs?.length) {
-                        const newSongs = nextAlphabetical.songs.filter(
-                            s => !initialQueue.some(q => q.track_id === s.track_id)
-                        );
-                        initialQueue = [...initialQueue, ...newSongs];
-                    }
-                } else {
-                    // In shuffled mode, get recommendations
-                    const recommendedSongs = await api.songs.getAll({ 
-                        fromSongId: song.track_id,
-                        sort: 'smart',
-                        limit: 25
-                    });
-                    
-                    if (recommendedSongs.songs?.length) {
-                        const newSongs = recommendedSongs.songs.filter(
+                    if (additionalResponse.songs?.length) {
+                        const newSongs = additionalResponse.songs.filter(
                             s => !initialQueue.some(q => q.track_id === s.track_id)
                         );
                         initialQueue = [...initialQueue, ...newSongs];
@@ -270,7 +262,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             } catch (error) {
                 console.log('Could not fetch additional songs:', error);
             }
-            
+
             // Update state based on shuffle status
             if (state.isShuffled) {
                 // Save alphabetical queue before shuffling
@@ -312,7 +304,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             setIsLoading(false);
             loadingRef.current = false;
         }
-    }, [state.isShuffled]);
+    }, [state.isShuffled, state.queue, smartShuffle]);
 
     // Track Player Events
     useTrackPlayerEvents([Event.PlaybackState, Event.PlaybackError, Event.PlaybackQueueEnded], async (event) => {
@@ -333,55 +325,48 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                     // At the end of queue with repeat all, go back to first song
                     const firstSong = state.queue[0];
                     if (firstSong) {
-                        await playSong(firstSong, state.queue);
+                        // Clean up the queue before repeating
+                        const cleanQueue = [...state.queue];
+                        dispatch({ 
+                            type: 'SET_QUEUE', 
+                            payload: { 
+                                queue: cleanQueue,
+                                currentIndex: 0 
+                            } 
+                        });
+                        queueManager.setQueue(cleanQueue, 0);
+                        await playSong(firstSong, cleanQueue);
                     }
                 } else if (state.currentIndex < state.queue.length - 1) {
-                    // Play next song if available
+                    // Play next song if available and clean up the queue
                     const nextSong = state.queue[state.currentIndex + 1];
                     if (nextSong) {
-                        await playSong(nextSong, state.queue);
+                        // Remove all songs before the current index
+                        const cleanQueue = state.queue.slice(state.currentIndex);
+                        dispatch({ 
+                            type: 'SET_QUEUE', 
+                            payload: { 
+                                queue: cleanQueue,
+                                currentIndex: 0  // Reset to 0 since we removed previous songs
+                            } 
+                        });
+                        queueManager.setQueue(cleanQueue, 0);
+                        await playSong(nextSong, cleanQueue);
                     }
                 } else {
-                    // Queue ended and no repeat mode, add recommended songs
-                    try {
-                        // Get recommended songs based on last played song
-                        const lastSong = state.queue[state.currentIndex];
-                        const recommendedSongs = await api.songs.getAll({
-                            fromSongId: lastSong.track_id,
-                            limit: 10
-                        });
-
-                        if (recommendedSongs.songs && recommendedSongs.songs.length > 0) {
-                            // Add recommended songs to queue
-                            const updatedQueue = [...state.queue, ...recommendedSongs.songs];
-                            dispatch({
-                                type: 'SET_QUEUE',
-                                payload: {
-                                    queue: updatedQueue,
-                                    currentIndex: state.queue.length // Index of first new song
-                                }
-                            });
-
-                            // Start playing the first recommended song
-                            await playSong(recommendedSongs.songs[0], updatedQueue);
-                        } else {
-                            // Fallback to random songs if no recommendations
-                            const randomSongs = await api.songs.getAll({ limit: 10 });
-                            if (randomSongs.songs && randomSongs.songs.length > 0) {
-                                const updatedQueue = [...state.queue, ...randomSongs.songs];
-                                dispatch({
-                                    type: 'SET_QUEUE',
-                                    payload: {
-                                        queue: updatedQueue,
-                                        currentIndex: state.queue.length
-                                    }
-                                });
-                                await playSong(randomSongs.songs[0], updatedQueue);
-                            }
-                        }
-                    } catch (error) {
-                        console.error('Error getting recommended songs:', error);
-                    }
+                    // Queue ended and no repeat mode, stop playback
+                    await TrackPlayer.pause();
+                    dispatch({ type: 'SET_PLAYING', payload: false });
+                    // Clean up the entire queue since playback is done
+                    const cleanQueue: Song[] = [];
+                    dispatch({ 
+                        type: 'SET_QUEUE', 
+                        payload: { 
+                            queue: cleanQueue,
+                            currentIndex: -1 
+                        } 
+                    });
+                    queueManager.setQueue(cleanQueue, -1);
                 }
             } catch (error) {
                 console.error('Error handling track completion:', error);
@@ -519,6 +504,39 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, []);
 
+    const addToUpNext = useCallback((song: Song) => {
+        try {
+            // Don't add if it's the current song
+            if (state.currentSong?.track_id === song.track_id) {
+                return;
+            }
+            
+            // Create new queue by inserting the song after current index
+            const newQueue = [
+                ...state.queue.slice(0, state.currentIndex + 1),
+                song,
+                ...state.queue.slice(state.currentIndex + 1)
+            ];
+            
+            // Update queue state and queue manager
+            dispatch({ 
+                type: 'SET_QUEUE', 
+                payload: { 
+                    queue: newQueue,
+                    currentIndex: state.currentIndex 
+                } 
+            });
+            queueManager.setQueue(newQueue, state.currentIndex);
+            
+            // If not shuffled, update original queue too
+            if (!state.isShuffled) {
+                dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: newQueue });
+            }
+        } catch (error) {
+            console.error('Error adding song to up next:', error);
+        }
+    }, [state.currentIndex, state.currentSong, state.queue, state.isShuffled]);
+
     const value = {
         currentSong: state.currentSong,
         isPlaying: state.isPlaying,
@@ -550,6 +568,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         },
         currentTrack: state.currentSong,
         togglePlayback,
+        addToUpNext,
     };
 
     return (

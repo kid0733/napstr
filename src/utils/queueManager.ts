@@ -34,17 +34,16 @@ export class QueueManager {
             return;
         }
 
+        // Clean up the queue before setting new one
+        this.queue = [...newQueue];
+        this.currentIndex = Math.min(Math.max(0, newIndex), this.queue.length - 1);
+
         // If this is the first time setting the queue or original queue is empty
         if (this.originalQueue.length === 0) {
-            // Sort original queue alphabetically
             this.originalQueue = [...newQueue].sort((a, b) => 
                 cleanTitleForSort(a.title).localeCompare(cleanTitleForSort(b.title))
             );
         }
-
-        // Update current queue
-        this.queue = [...newQueue];
-        this.currentIndex = Math.min(Math.max(0, newIndex), this.queue.length - 1);
     }
 
     setShuffled(shuffled: boolean) {
@@ -78,5 +77,37 @@ export class QueueManager {
     getUpNext(): Song[] {
         if (this.queue.length === 0) return [];
         return this.queue.slice(this.currentIndex + 1);
+    }
+
+    addToUpNext(song: Song) {
+        // Don't add if it's the current song
+        if (this.getCurrentSong()?.track_id === song.track_id) {
+            return;
+        }
+
+        // Insert the song after the current index
+        this.queue.splice(this.currentIndex + 1, 0, song);
+
+        // If not shuffled, update original queue too
+        if (!this.isShuffled) {
+            const currentSong = this.getCurrentSong();
+            if (currentSong) {
+                // Find where the current song is in the original queue
+                const originalIndex = this.originalQueue.findIndex(
+                    s => s.track_id === currentSong.track_id
+                );
+                if (originalIndex !== -1) {
+                    this.originalQueue.splice(originalIndex + 1, 0, song);
+                }
+            }
+        }
+    }
+
+    cleanupQueue() {
+        // Remove all songs before current index
+        if (this.currentIndex > 0) {
+            this.queue = this.queue.slice(this.currentIndex);
+            this.currentIndex = 0;
+        }
     }
 } 

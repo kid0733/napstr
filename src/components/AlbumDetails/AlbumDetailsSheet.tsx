@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, Pressable, Dimensions, ActivityIndicator, Alert
 import { Image } from 'expo-image';
 import { colors } from '@/constants/tokens';
 import { Ionicons } from '@expo/vector-icons';
-import { PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
+import { PanGestureHandler, PanGestureHandlerGestureEvent, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
     useAnimatedGestureHandler,
     useAnimatedStyle,
@@ -48,6 +48,131 @@ const SPRING_CONFIG = {
     restSpeedThreshold: 0.01,
 };
 
+interface SongItemProps {
+    song: Song;
+    index: number;
+    isCurrentTrack: boolean;
+    isPlaying: boolean;
+    onPress: () => void;
+    onAddToQueue: () => void;
+    onRemoveFromQueue: () => void;
+}
+
+function SongItem({ song, index, isCurrentTrack, isPlaying, onPress, onAddToQueue, onRemoveFromQueue }: SongItemProps) {
+    const translateX = useSharedValue(0);
+
+    const panGesture = useAnimatedGestureHandler<PanGestureHandlerGestureEvent>({
+        onActive: (event) => {
+            translateX.value = event.translationX;
+        },
+        onEnd: (event) => {
+            const shouldAddToQueue = event.translationX < -100;
+            const shouldRemoveFromQueue = event.translationX > 100;
+            
+            if (shouldAddToQueue) {
+                runOnJS(onAddToQueue)();
+                translateX.value = withSpring(-50, {}, () => {
+                    translateX.value = withSpring(0);
+                });
+            } else if (shouldRemoveFromQueue) {
+                runOnJS(onRemoveFromQueue)();
+                translateX.value = withSpring(50, {}, () => {
+                    translateX.value = withSpring(0);
+                });
+            } else {
+                translateX.value = withSpring(0);
+            }
+        }
+    });
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        transform: [{ translateX: translateX.value }]
+    }));
+
+    const leftIconStyle = useAnimatedStyle(() => ({
+        position: 'absolute',
+        right: 20,
+        opacity: Math.min(1, -translateX.value / 100)
+    }));
+
+    const rightIconStyle = useAnimatedStyle(() => ({
+        position: 'absolute',
+        left: 20,
+        opacity: Math.min(1, translateX.value / 100)
+    }));
+
+    return (
+        <PanGestureHandler onGestureEvent={panGesture}>
+            <Animated.View>
+                <Animated.View style={leftIconStyle}>
+                    <Ionicons name="add-circle" size={24} color={colors.greenPrimary} />
+                </Animated.View>
+                <Animated.View style={rightIconStyle}>
+                    <Ionicons name="remove-circle" size={24} color={colors.error} />
+                </Animated.View>
+                <Animated.View style={animatedStyle}>
+                    <Pressable 
+                        style={({ pressed }) => [
+                            styles.songItem,
+                            isCurrentTrack && styles.currentSongItem,
+                            pressed && styles.buttonPressed
+                        ]}
+                        onPress={onPress}
+                    >
+                        <View style={styles.songIndexContainer}>
+                            {isCurrentTrack && isPlaying ? (
+                                <Ionicons 
+                                    name="volume-high" 
+                                    size={16} 
+                                    color={colors.greenPrimary} 
+                                />
+                            ) : (
+                                <Text style={[
+                                    styles.songIndex,
+                                    isCurrentTrack && styles.currentSongText
+                                ]}>
+                                    {index + 1}
+                                </Text>
+                            )}
+                        </View>
+                        <View style={styles.songItemContent}>
+                            <Text 
+                                style={[
+                                    styles.songTitle,
+                                    isCurrentTrack && styles.currentSongText
+                                ]} 
+                                numberOfLines={1}
+                            >
+                                {song.title}
+                            </Text>
+                            <Text 
+                                style={[
+                                    styles.songArtist,
+                                    isCurrentTrack && styles.currentSongTextSecondary
+                                ]} 
+                                numberOfLines={1}
+                            >
+                                {song.artists?.join(', ') || 'Unknown Artist'}
+                            </Text>
+                        </View>
+                        <Pressable 
+                            style={styles.songControls}
+                            onPress={() => Alert.alert('Coming Soon', 'Song options will be available soon!')}
+                        >
+                            <Ionicons 
+                                name="ellipsis-horizontal" 
+                                size={24} 
+                                color={colors.text}
+                                style={{ opacity: 0.6 }}
+                            />
+                        </Pressable>
+                    </Pressable>
+                </Animated.View>
+            </Animated.View>
+        </PanGestureHandler>
+    );
+}
+
 export function AlbumDetailsSheet({ album, onClose }: AlbumDetailsSheetProps) {
     const { 
         playSong, 
@@ -55,6 +180,7 @@ export function AlbumDetailsSheet({ album, onClose }: AlbumDetailsSheetProps) {
         isPlaying: globalIsPlaying,
         currentTrack: globalCurrentTrack,
         playPause: globalPlayPause,
+        queue,
     } = usePlayer();
     
     const [songs, setSongs] = useState<Song[]>(album.songs || []);
@@ -112,13 +238,52 @@ export function AlbumDetailsSheet({ album, onClose }: AlbumDetailsSheetProps) {
 
     const handleSongSelect = useCallback(async (index: number) => {
         try {
-            const queueSongs = [...songs];
-            setQueue(queueSongs, index);
-            await playSong(songs[index]);
+            setQueue(songs, index);
+            await playSong(songs[index], songs);
         } catch (error) {
             Alert.alert('Error', 'Failed to play selected song. Please try again.');
         }
     }, [songs, playSong, setQueue]);
+
+    const handleAddToQueue = useCallback((song: Song) => {
+        // Get current queue state
+        const currentIndex = queue.findIndex(s => s.track_id === globalCurrentTrack?.track_id);
+        
+        // Insert the new song after the current playing song, or at the end if nothing is playing
+        const insertIndex = currentIndex >= 0 ? currentIndex + 1 : queue.length;
+        const newQueue = [
+            ...queue.slice(0, insertIndex),
+            song,
+            ...queue.slice(insertIndex)
+        ];
+        
+        setQueue(newQueue, currentIndex >= 0 ? currentIndex : 0);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Added to Queue', `${song.title} will play after the current song`);
+    }, [queue, globalCurrentTrack, setQueue]);
+
+    const handleRemoveFromQueue = useCallback((song: Song) => {
+        const currentIndex = queue.findIndex(s => s.track_id === globalCurrentTrack?.track_id);
+        const removeIndex = queue.findIndex(s => s.track_id === song.track_id);
+        
+        // Don't remove currently playing song
+        if (removeIndex === currentIndex) {
+            Alert.alert('Cannot Remove', 'Cannot remove currently playing song from queue');
+            return;
+        }
+        
+        // Remove the song but maintain current playback position
+        const newQueue = queue.filter(s => s.track_id !== song.track_id);
+        
+        // If removing a song before current song, adjust current index
+        const newCurrentIndex = currentIndex > removeIndex ? currentIndex - 1 : currentIndex;
+        
+        // Keep the current song and its position in the queue
+        setQueue(newQueue, Math.max(0, newCurrentIndex));
+        
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Removed from Queue', `${song.title} has been removed from your queue`);
+    }, [queue, globalCurrentTrack, setQueue]);
 
     const panGestureEvent = useAnimatedGestureHandler<PanGestureHandlerGestureEvent, GestureContext>({
         onStart: (_, context) => {
@@ -292,63 +457,16 @@ export function AlbumDetailsSheet({ album, onClose }: AlbumDetailsSheetProps) {
                                 </View>
                             ) : songs.length > 0 ? (
                                 songs.map((song, index) => (
-                                    <Pressable 
+                                    <SongItem 
                                         key={song.track_id}
-                                        style={({ pressed }) => [
-                                            styles.songItem,
-                                            song.track_id === globalCurrentTrack?.track_id && styles.currentSongItem,
-                                            pressed && styles.buttonPressed
-                                        ]}
+                                        song={song}
+                                        index={index}
+                                        isCurrentTrack={song.track_id === globalCurrentTrack?.track_id}
+                                        isPlaying={globalIsPlaying}
                                         onPress={() => handleSongSelect(index)}
-                                    >
-                                        <View style={styles.songIndexContainer}>
-                                            {song.track_id === globalCurrentTrack?.track_id && globalIsPlaying ? (
-                                                <Ionicons 
-                                                    name="volume-high" 
-                                                    size={16} 
-                                                    color={colors.greenPrimary} 
-                                                />
-                                            ) : (
-                                                <Text style={[
-                                                    styles.songIndex,
-                                                    song.track_id === globalCurrentTrack?.track_id && styles.currentSongText
-                                                ]}>
-                                                    {index + 1}
-                                                </Text>
-                                            )}
-                                        </View>
-                                        <View style={styles.songItemContent}>
-                                            <Text 
-                                                style={[
-                                                    styles.songTitle,
-                                                    song.track_id === globalCurrentTrack?.track_id && styles.currentSongText
-                                                ]} 
-                                                numberOfLines={1}
-                                            >
-                                                {song.title}
-                                            </Text>
-                                            <Text 
-                                                style={[
-                                                    styles.songArtist,
-                                                    song.track_id === globalCurrentTrack?.track_id && styles.currentSongTextSecondary
-                                                ]} 
-                                                numberOfLines={1}
-                                            >
-                                                {song.artists?.join(', ') || 'Unknown Artist'}
-                                            </Text>
-                                        </View>
-                                        <Pressable 
-                                            style={styles.songControls}
-                                            onPress={() => Alert.alert('Coming Soon', 'Song options will be available soon!')}
-                                        >
-                                            <Ionicons 
-                                                name="ellipsis-horizontal" 
-                                                size={24} 
-                                                color={colors.text}
-                                                style={{ opacity: 0.6 }}
-                                            />
-                                        </Pressable>
-                                    </Pressable>
+                                        onAddToQueue={() => handleAddToQueue(song)}
+                                        onRemoveFromQueue={() => handleRemoveFromQueue(song)}
+                                    />
                                 ))
                             ) : (
                                 <View style={styles.loadingContainer}>

@@ -20,10 +20,11 @@ interface SongDetailsSheetProps {
 }
 
 export function SongDetailsSheet({ song, isVisible, onClose, bottomSheetModalRef }: SongDetailsSheetProps) {
-    const { currentTrack, isPlaying, playSong, togglePlayback } = usePlayer();
+    const { currentTrack, isPlaying, playSong, togglePlayback, queue, setQueue } = usePlayer();
     const { isLiked, toggleLike } = useLikes();
     const isCurrentSong = currentTrack?.track_id === song.track_id;
     const [isAddingToPlaylist, setIsAddingToPlaylist] = useState(false);
+    const [isAddingToQueue, setIsAddingToQueue] = useState(false);
 
     const snapPoints = useMemo(() => ['90%'], []);
 
@@ -49,6 +50,14 @@ export function SongDetailsSheet({ song, isVisible, onClose, bottomSheetModalRef
                     songTitle: song.title,
                     audioUrl: `https://music.napstr.uk/songs/${song.track_id}.mp3`
                 });
+
+                // Clean up the queue by removing songs before the current song
+                const currentIndex = queue.findIndex(s => s.track_id === currentTrack?.track_id);
+                if (currentIndex > 0) {
+                    const newQueue = queue.slice(currentIndex);
+                    setQueue(newQueue, 0);
+                }
+
                 await playSong(song);
                 console.log('New song playback initiated');
             }
@@ -66,7 +75,37 @@ export function SongDetailsSheet({ song, isVisible, onClose, bottomSheetModalRef
                 [{ text: 'OK' }]
             );
         }
-    }, [isCurrentSong, togglePlayback, playSong, song, isPlaying, currentTrack?.track_id]);
+    }, [isCurrentSong, togglePlayback, playSong, song, isPlaying, currentTrack?.track_id, queue, setQueue]);
+
+    const handleAddToQueue = useCallback(async () => {
+        try {
+            setIsAddingToQueue(true);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            
+            // Don't add if it's the current song
+            if (currentTrack?.track_id === song.track_id) {
+                Alert.alert('Already Playing', `${song.title} is currently playing`);
+                return;
+            }
+            
+            // Insert song after the current track
+            const currentIndex = queue.findIndex(s => s.track_id === currentTrack?.track_id);
+            const insertIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+            const newQueue = [
+                ...queue.slice(0, insertIndex),
+                song,
+                ...queue.slice(insertIndex)
+            ];
+            
+            setQueue(newQueue, currentIndex >= 0 ? currentIndex : 0);
+            Alert.alert('Added to Queue', `${song.title} will play next`);
+        } catch (error) {
+            console.error('Error adding to queue:', error);
+            Alert.alert('Error', 'Failed to add song to queue. Please try again.');
+        } finally {
+            setIsAddingToQueue(false);
+        }
+    }, [queue, currentTrack, song, setQueue]);
 
     const getPlayButtonIcon = useCallback(() => {
         if (isCurrentSong) {
@@ -220,6 +259,22 @@ export function SongDetailsSheet({ song, isVisible, onClose, bottomSheetModalRef
                                         name={getPlayButtonIcon()}
                                         size={32} 
                                         color={colors.background} 
+                                    />
+                                </Pressable>
+
+                                <Pressable 
+                                    style={({ pressed }) => [
+                                        styles.controlButton,
+                                        pressed && styles.buttonPressed
+                                    ]}
+                                    onPress={handleAddToQueue}
+                                    disabled={isAddingToQueue}
+                                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                                >
+                                    <Ionicons 
+                                        name={isAddingToQueue ? "hourglass-outline" : "list"} 
+                                        size={28} 
+                                        color={colors.text} 
                                     />
                                 </Pressable>
 
