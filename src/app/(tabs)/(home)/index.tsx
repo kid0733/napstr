@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions, RefreshControl, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions, RefreshControl, ActivityIndicator, NativeSyntheticEvent, NativeScrollEvent } from 'react-native';
 import { colors } from '@/constants/tokens';
 import { Song } from '@/services/api';
 import { usePlayer } from '@/contexts/PlayerContext';
@@ -11,10 +11,15 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 import { api } from '@/services/api';
+import { ShuffleManager } from '@/utils/shuffleManager';
+import { QueueManager } from '@/utils/queueManager';
+import { PopularSongsBackground } from '@/components/Background/PopularSongsBackground';
+import { Blur } from '@/components/Blur/Blur';
+import { PopularSongsSection } from '@/components/PopularSongs/PopularSongsSection';
+import { AlbumRecommendations } from '@/components/AlbumRecommendations';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const SONG_ITEM_WIDTH = (SCREEN_WIDTH - 48) / 2; // 2 columns with padding
-const ALBUM_CARD_WIDTH = SCREEN_WIDTH * 0.7;
 const PAGE_SIZE = 50;
 
 function GradientOverlay() {
@@ -76,45 +81,6 @@ function SongGridItem({ song, onPress, isPlaying, isCurrentSong }: SongGridItemP
     );
 }
 
-interface AlbumCardProps {
-    album: {
-        title: string;
-        artwork: string;
-        artist: string;
-        songCount: number;
-    };
-    onPress: () => void;
-}
-
-function AlbumCard({ album, onPress }: AlbumCardProps) {
-    return (
-        <Pressable 
-            style={({ pressed }) => [
-                styles.albumCard,
-                pressed && styles.pressed
-            ]}
-            onPress={onPress}
-        >
-            <Image 
-                source={{ uri: album.artwork }}
-                style={styles.albumArtwork}
-                contentFit="cover"
-            />
-            <View style={styles.albumInfo}>
-                <Text style={styles.albumTitle} numberOfLines={1}>
-                    {album.title}
-                </Text>
-                <Text style={styles.albumArtist} numberOfLines={1}>
-                    {album.artist}
-                </Text>
-                <Text style={styles.albumSongCount}>
-                    {album.songCount} songs
-                </Text>
-            </View>
-        </Pressable>
-    );
-}
-
 interface SongBarProps {
     song: Song;
     onPress: () => void;
@@ -160,95 +126,167 @@ function SongBar({ song, onPress, isPlaying, isCurrentSong }: SongBarProps) {
 export default function HomeScreen() {
     const [recentSongs, setRecentSongs] = useState<Song[]>([]);
     const [popularSongs, setPopularSongs] = useState<Song[]>([]);
-    const [albums, setAlbums] = useState<any[]>([]);
     const [selectedSong, setSelectedSong] = useState<Song | null>(null);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [hasMore, setHasMore] = useState(true);
-    const { currentTrack, isPlaying, playTrack } = usePlayer();
+    const { currentTrack, isPlaying, playSong, queue, setQueue, playPause } = usePlayer();
     const bottomSheetModalRef = useRef<BottomSheetModal>(null);
+    const [popularSongsPage, setPopularSongsPage] = useState(1);
+    const [hasMorePopular, setHasMorePopular] = useState(true);
+    const [isLoadingMorePopular, setIsLoadingMorePopular] = useState(false);
+    const [allPopularSongs, setAllPopularSongs] = useState<Song[]>([]);
+    const [visiblePopularCount, setVisiblePopularCount] = useState(50);
+    
+    // Initialize managers
+    const queueManager = useRef(new QueueManager()).current;
+    const shuffleManager = useRef(new ShuffleManager(queueManager)).current;
 
     const handleSongPress = useCallback((song: Song) => {
+        console.log('Song pressed:', song.title);
         setSelectedSong(song);
         bottomSheetModalRef.current?.present();
     }, []);
 
     const handleCloseModal = useCallback(() => {
+        console.log('Closing song details');
         bottomSheetModalRef.current?.dismiss();
+        setSelectedSong(null);
     }, []);
 
     const loadData = useCallback(async (page = 1, refresh = false) => {
         try {
             if (page === 1) {
                 setIsLoading(true);
-            } else {
-                setIsLoadingMore(true);
             }
 
-            const [recentResponse, popularResponse] = await Promise.all([
-                api.songs.getAll({ 
-                    sort: 'added_at', 
-                    order: 'desc', 
-                    limit: PAGE_SIZE,
-                    offset: (page - 1) * PAGE_SIZE 
-                }),
-                api.songs.getAll({ sort: 'popularity', order: 'desc', limit: 50 })
-            ]);
-
-            // Group songs by album to create album list
-            const albumMap = new Map<string, any>();
-            recentResponse.songs?.forEach((song: Song) => {
-                if (!albumMap.has(song.album)) {
-                    albumMap.set(song.album, {
-                        title: song.album,
-                        artwork: song.album_art,
-                        artist: song.artists[0],
-                        songs: []
-                    });
-                }
-                albumMap.get(song.album).songs.push(song);
+            const offset = (page - 1) * PAGE_SIZE;
+            // Only get recently added songs initially
+            const allSongsResponse = await api.songs.getAll({ 
+                sort: 'added_at', 
+                order: 'desc', 
+                limit: PAGE_SIZE,
+                offset: offset
             });
 
-            const albumList = Array.from(albumMap.values()).map(album => ({
-                ...album,
-                songCount: album.songs.length
-            }));
-
+            // Set recent songs
+            const recentSongs = allSongsResponse.songs || [];
             if (refresh || page === 1) {
-                setRecentSongs(recentResponse.songs || []);
+                setRecentSongs(recentSongs);
             } else {
-                setRecentSongs(prev => [...prev, ...(recentResponse.songs || [])]);
+                setRecentSongs(prev => [...prev, ...recentSongs]);
             }
 
-            setPopularSongs(popularResponse.songs || []);
-            setAlbums(albumList);
-            setHasMore((recentResponse.songs || []).length === PAGE_SIZE);
+            setHasMore(recentSongs.length === PAGE_SIZE);
             setCurrentPage(page);
         } catch (error) {
             console.error('Error loading data:', error);
         } finally {
             setIsLoading(false);
-            setIsLoadingMore(false);
         }
     }, []);
 
+    // Separate function to load popular songs
+    const loadPopularSongs = useCallback(async () => {
+        if (allPopularSongs.length === 0) {
+            try {
+                const response = await api.songs.getAll({ 
+                    sort: 'random',
+                    limit: 200
+                });
+
+                if (response.songs?.length) {
+                    queueManager.setQueue(response.songs, 0);
+                    const { queue: shuffledPopularSongs } = shuffleManager.shuffleAll();
+                    setAllPopularSongs(shuffledPopularSongs);
+                    setPopularSongs(shuffledPopularSongs.slice(0, 50));
+                    setVisiblePopularCount(50);
+                    setHasMorePopular(shuffledPopularSongs.length > 50);
+                }
+            } catch (error) {
+                console.error('Error loading popular songs:', error);
+            }
+        }
+    }, [allPopularSongs.length, queueManager, shuffleManager]);
+
+    // Move loadMorePopular before handleScroll
+    const loadMorePopular = useCallback(() => {
+        if (visiblePopularCount < allPopularSongs.length) {
+            const nextBatch = Math.min(visiblePopularCount + 50, allPopularSongs.length);
+            setPopularSongs(allPopularSongs.slice(0, nextBatch));
+            setVisiblePopularCount(nextBatch);
+            setHasMorePopular(nextBatch < allPopularSongs.length);
+        } else {
+            setHasMorePopular(false);
+        }
+    }, [visiblePopularCount, allPopularSongs]);
+
+    // Add proper type for nativeEvent
+    const handleScroll = useCallback(({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+        const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+        const paddingToBottom = 20;
+        const isEndReached = layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+        
+        if (isEndReached && !isLoadingMorePopular && !isRefreshing && hasMorePopular) {
+            loadMorePopular();
+        }
+    }, [hasMorePopular, isLoadingMorePopular, isRefreshing, loadMorePopular]);
+
+    const handleRefresh = useCallback(async () => {
+        setIsRefreshing(true);
+        try {
+            await Promise.all([
+                loadData(1, true),
+                loadPopularSongs()
+            ]);
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [loadData, loadPopularSongs]);
+
     const loadMore = useCallback(() => {
         if (!isLoadingMore && hasMore) {
-            loadData(currentPage + 1);
+            // Set loading state without triggering scroll
+            setIsLoadingMore(true);
+            
+            // Load next page
+            loadData(currentPage + 1, false).finally(() => {
+                setIsLoadingMore(false);
+            });
         }
     }, [currentPage, hasMore, isLoadingMore, loadData]);
 
     useEffect(() => {
-        loadData();
-    }, [loadData]);
+        const initialLoad = async () => {
+            try {
+                setIsLoading(true);
+                await Promise.all([
+                    loadData(),
+                    loadPopularSongs()
+                ]);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+        initialLoad();
+    }, [loadData, loadPopularSongs]);
 
-    const handleRefresh = useCallback(async () => {
-        setIsRefreshing(true);
-        await loadData();
-        setIsRefreshing(false);
-    }, [loadData]);
+    // Add shuffle handler
+    const handleShuffle = useCallback(() => {
+        if (queue && queue.length > 0) {
+            queueManager.setQueue(queue, 0);
+            const { queue: shuffledQueue, currentIndex } = shuffleManager.shuffleAll();
+            setQueue(shuffledQueue, currentIndex);
+        }
+    }, [queue, queueManager, shuffleManager, setQueue]);
+
+    const handleTogglePlay = useCallback(async () => {
+        if (currentTrack) {
+            await playPause();
+        }
+    }, [currentTrack, playPause]);
 
     if (isLoading) {
         return (
@@ -262,17 +300,33 @@ export default function HomeScreen() {
         <ScrollView 
             style={styles.container}
             refreshControl={
-                <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} />
+                <RefreshControl
+                    refreshing={isRefreshing}
+                    onRefresh={handleRefresh}
+                    tintColor={colors.greenPrimary}
+                />
             }
-            onScroll={({ nativeEvent }) => {
-                const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-                const isEndReached = layoutMeasurement.height + contentOffset.y >= contentSize.height - 20;
-                if (isEndReached) {
-                    loadMore();
-                }
-            }}
+            onScroll={handleScroll}
             scrollEventThrottle={400}
+            maintainVisibleContentPosition={{
+                minIndexForVisible: 0,
+                autoscrollToTopThreshold: 10
+            }}
         >
+            {/* Add Shuffle Button */}
+            <View style={styles.shuffleContainer}>
+                <Pressable 
+                    style={({ pressed }) => [
+                        styles.shuffleButton,
+                        pressed && styles.pressed
+                    ]}
+                    onPress={handleShuffle}
+                >
+                    <Ionicons name="shuffle" size={24} color={colors.greenPrimary} />
+                    <Text style={styles.shuffleText}>Shuffle All</Text>
+                </Pressable>
+            </View>
+
             {/* Recently Added Songs - Bar Layout */}
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Recently Added</Text>
@@ -290,70 +344,30 @@ export default function HomeScreen() {
                 </View>
             </View>
 
-            {/* Featured Albums - Horizontal Scroll */}
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Featured Albums</Text>
-                <ScrollView 
-                    horizontal 
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.albumsContainer}
-                >
-                    {albums.map((album, index) => (
-                        <AlbumCard
-                            key={album.title}
-                            album={album}
-                            onPress={() => {/* Handle album press */}}
-                        />
-                    ))}
-                </ScrollView>
-            </View>
+            {/* Featured Albums - New Component */}
+            <AlbumRecommendations />
 
-            {/* Popular Songs - Staggered Grid */}
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Popular Songs</Text>
-                <View style={styles.staggeredGrid}>
-                    {popularSongs.map((song, index) => (
-                        <Pressable 
-                            key={song.track_id}
-                            style={[
-                                styles.staggeredItem,
-                                index % 3 === 0 && styles.staggeredItemLarge
-                            ]}
-                            onPress={() => handleSongPress(song)}
-                        >
-                            <Image 
-                                source={{ uri: song.album_art }}
-                                style={styles.staggeredArt}
-                                contentFit="cover"
-                            />
-                            <GradientOverlay />
-                            <View style={styles.staggeredInfo}>
-                                <Text style={styles.staggeredTitle} numberOfLines={1}>
-                                    {song.title}
-                                </Text>
-                                <Text style={styles.staggeredArtist} numberOfLines={1}>
-                                    {song.artists.join(', ')}
-                                </Text>
-                            </View>
-                        </Pressable>
-                    ))}
-                </View>
-            </View>
+            {/* Popular Songs Section */}
+            <PopularSongsSection 
+                popularSongs={popularSongs}
+                onSongPress={handleSongPress}
+                currentTrack={currentTrack}
+                isPlaying={isPlaying}
+                onTogglePlay={handleTogglePlay}
+            />
 
-            {selectedSong && (
-                <SongDetailsSheet
-                    song={selectedSong}
-                    isVisible={true}
-                    onClose={handleCloseModal}
-                    bottomSheetModalRef={bottomSheetModalRef}
-                />
-            )}
-
-            {isLoadingMore && (
+            {isLoadingMorePopular && (
                 <View style={styles.loadingMore}>
                     <ActivityIndicator size="small" color={colors.greenPrimary} />
                 </View>
             )}
+
+            <SongDetailsSheet
+                song={selectedSong || {} as Song}
+                isVisible={!!selectedSong}
+                onClose={handleCloseModal}
+                bottomSheetModalRef={bottomSheetModalRef}
+            />
         </ScrollView>
     );
 }
@@ -417,92 +431,6 @@ const styles = StyleSheet.create({
         position: 'absolute',
         top: 8,
         right: 8,
-    },
-    // Album Card Layout
-    albumsContainer: {
-        paddingHorizontal: 8,
-    },
-    albumCard: {
-        width: ALBUM_CARD_WIDTH,
-        marginHorizontal: 8,
-        borderRadius: 16,
-        backgroundColor: colors.surface,
-        overflow: 'hidden',
-    },
-    albumArtwork: {
-        width: '100%',
-        height: ALBUM_CARD_WIDTH,
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
-    },
-    albumInfo: {
-        padding: 16,
-    },
-    albumTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: colors.text,
-        marginBottom: 4,
-    },
-    albumArtist: {
-        fontSize: 16,
-        color: colors.text,
-        opacity: 0.8,
-        marginBottom: 4,
-    },
-    albumSongCount: {
-        fontSize: 14,
-        color: colors.text,
-        opacity: 0.6,
-    },
-    // Staggered Grid Layout
-    staggeredGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        justifyContent: 'space-between',
-    },
-    staggeredItem: {
-        width: (SCREEN_WIDTH - 48) / 3,
-        height: (SCREEN_WIDTH - 48) / 3,
-        marginBottom: 8,
-        borderRadius: 8,
-        overflow: 'hidden',
-    },
-    staggeredItemLarge: {
-        width: (SCREEN_WIDTH - 40) * 0.66,
-        height: (SCREEN_WIDTH - 40) * 0.66,
-    },
-    staggeredArt: {
-        width: '100%',
-        height: '100%',
-    },
-    staggeredGradient: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: '50%',
-        justifyContent: 'flex-end',
-        padding: 8,
-    },
-    staggeredInfo: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: 8,
-        justifyContent: 'flex-end',
-    },
-    staggeredTitle: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: colors.text,
-        marginBottom: 2,
-    },
-    staggeredArtist: {
-        fontSize: 12,
-        color: colors.text,
-        opacity: 0.8,
     },
     pressed: {
         opacity: 0.8,
@@ -568,5 +496,34 @@ const styles = StyleSheet.create({
     songBarColumn: {
         width: '50%',
         paddingHorizontal: 4,
+    },
+    popularSongsContainer: {
+        position: 'relative',
+        overflow: 'hidden',
+        minHeight: SCREEN_WIDTH,
+        margin: 0,
+        padding: 0,
+    },
+    popularSongsSection: {
+        padding: 0,
+        margin: 0,
+    },
+    shuffleContainer: {
+        paddingHorizontal: 16,
+        paddingTop: 8,
+    },
+    shuffleButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        padding: 12,
+        borderRadius: 12,
+        justifyContent: 'center',
+    },
+    shuffleText: {
+        color: colors.greenPrimary,
+        marginLeft: 8,
+        fontSize: 16,
+        fontWeight: '600',
     },
 }); 

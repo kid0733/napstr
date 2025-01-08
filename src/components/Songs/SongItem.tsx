@@ -181,13 +181,13 @@ export const SongItem = React.memo(function SongItem({
                             style={titleStyle}
                             numberOfLines={1}
                         >
-                            {song.title}
+                            {song.title || 'Untitled'}
                         </Text>
                         <Text 
                             style={styles.artist}
                             numberOfLines={1}
                         >
-                            {song.artists.join(', ')}
+                            {song.artists?.join(', ') || 'Unknown Artist'}
                         </Text>
                     </View>
                     {isCurrentSong && (

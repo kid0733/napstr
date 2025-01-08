@@ -1,5 +1,5 @@
 import React, { memo, useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { View, Text, Image, StyleSheet, Dimensions, Pressable, Platform, ScrollView } from 'react-native';
+import { View, Text, Image, StyleSheet, Dimensions, Pressable, Platform, ScrollView, Alert } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
@@ -27,6 +27,8 @@ import { useLyrics } from '@/contexts/LyricsContext';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/types/navigation';
+import { useLikes } from '@/contexts/LikesContext';
+import * as Haptics from 'expo-haptics';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -316,6 +318,7 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         playSong,
         seek
     } = usePlayer();
+    const { isLiked, toggleLike } = useLikes();
 
     const [showOptions, setShowOptions] = useState(false);
     const [isClosing, setIsClosing] = useState(false);
@@ -657,6 +660,17 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         popularity: 0
     });
 
+    const handleLikePress = useCallback(async () => {
+        if (!currentTrack?.track_id) return;
+        try {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            await toggleLike(currentTrack.track_id);
+        } catch (error) {
+            console.error('Error handling like press:', error);
+            Alert.alert('Error', 'Failed to update like status. Please try again.');
+        }
+    }, [currentTrack?.track_id, toggleLike]);
+
     const renderItem = useCallback(({ item, index }: { item: any, index: number }) => {
         if (!currentTrack) return null;
         
@@ -719,8 +733,16 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
             case 'additional':
                 return (
                     <View style={styles.additionalControls}>
-                        <Pressable style={styles.controlButton}>
-                            <Ionicons name="heart-outline" size={24} color={colors.greenTertiary} />
+                        <Pressable 
+                            style={styles.controlButton}
+                            onPress={handleLikePress}
+                            disabled={!currentTrack?.track_id}
+                        >
+                            <Ionicons 
+                                name={currentTrack?.track_id && isLiked(currentTrack.track_id) ? "heart" : "heart-outline"} 
+                                size={24} 
+                                color={currentTrack?.track_id && isLiked(currentTrack.track_id) ? colors.greenPrimary : colors.greenTertiary} 
+                            />
                         </Pressable>
                         <Pressable 
                             style={styles.controlButton}
@@ -732,8 +754,9 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
                                     });
                                 }
                             }}
+                            disabled={!currentTrack}
                         >
-                            <Ionicons name="list" size={24} color={colors.greenTertiary} />
+                            <Ionicons name="list" size={24} color={currentTrack ? colors.greenTertiary : colors.greenTertiary} />
                         </Pressable>
                         <Pressable style={styles.controlButton}>
                             <Ionicons name="share-outline" size={24} color={colors.greenTertiary} />

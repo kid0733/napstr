@@ -50,14 +50,11 @@ export const FloatingActionIndicator: React.FC<FloatingActionIndicatorProps> = (
         break;
     }
 
-    const borderRadius = withTiming(isActive ? 22 : height / 2, { duration: 300 });
-    const indicatorWidth = withTiming(isActive ? width : height, { duration: 300 });
-
     return {
-      width: indicatorWidth,
-      borderRadius,
+      width: height,
+      borderRadius: height / 2,
       transform: [
-        { translateX: withTiming(translateX + (isActive ? 0 : (width - height) / 2), { duration: 200 }) },
+        { translateX: withTiming(translateX + (width - height) / 2, { duration: 200 }) },
         { translateY: withTiming(translateY, { duration: 200 }) },
       ],
     };

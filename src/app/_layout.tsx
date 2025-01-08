@@ -8,6 +8,7 @@ import { PlayerProvider, LyricsProvider, UserProvider, MaximizedPlayerProvider, 
 import { SplashOverlay } from '@/components/SplashOverlay/SplashOverlay'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet'
+import { PortalProvider } from '@gorhom/portal'
 
 // Define static assets
 const STATIC_ASSETS = {
@@ -96,7 +97,9 @@ export default function RootLayout() {
                                 <LyricsProvider>
                                     <MaximizedPlayerProvider>
                                         <BottomSheetModalProvider>
-                                            <Stack screenOptions={{ headerShown: false }} />
+                                            <PortalProvider>
+                                                <Stack screenOptions={{ headerShown: false }} />
+                                            </PortalProvider>
                                         </BottomSheetModalProvider>
                                     </MaximizedPlayerProvider>
                                 </LyricsProvider>

@@ -20,7 +20,7 @@ interface SongDetailsSheetProps {
 }
 
 export function SongDetailsSheet({ song, isVisible, onClose, bottomSheetModalRef }: SongDetailsSheetProps) {
-    const { currentTrack, isPlaying, playTrack, togglePlayback } = usePlayer();
+    const { currentTrack, isPlaying, playSong, togglePlayback } = usePlayer();
     const { isLiked, toggleLike } = useLikes();
     const isCurrentSong = currentTrack?.track_id === song.track_id;
     const [isAddingToPlaylist, setIsAddingToPlaylist] = useState(false);
@@ -49,7 +49,7 @@ export function SongDetailsSheet({ song, isVisible, onClose, bottomSheetModalRef
                     songTitle: song.title,
                     audioUrl: `https://music.napstr.uk/songs/${song.track_id}.mp3`
                 });
-                await playTrack(song);
+                await playSong(song);
                 console.log('New song playback initiated');
             }
         } catch (error) {
@@ -66,7 +66,7 @@ export function SongDetailsSheet({ song, isVisible, onClose, bottomSheetModalRef
                 [{ text: 'OK' }]
             );
         }
-    }, [isCurrentSong, togglePlayback, playTrack, song, isPlaying, currentTrack?.track_id]);
+    }, [isCurrentSong, togglePlayback, playSong, song, isPlaying, currentTrack?.track_id]);
 
     const getPlayButtonIcon = useCallback(() => {
         if (isCurrentSong) {
@@ -144,13 +144,8 @@ export function SongDetailsSheet({ song, isVisible, onClose, bottomSheetModalRef
 
     // Add logging to track state changes
     useEffect(() => {
-        console.log('Song details state changed:', {
-            isCurrentSong,
-            isPlaying,
-            currentTrackId: currentTrack?.track_id,
-            selectedSongId: song.track_id
-        });
-    }, [isCurrentSong, isPlaying, currentTrack, song]);
+        const isCurrentSong = currentTrack?.track_id === song?.track_id;
+    }, [currentTrack?.track_id, song?.track_id, isPlaying]);
 
     return (
         <BottomSheetModal
@@ -191,9 +186,9 @@ export function SongDetailsSheet({ song, isVisible, onClose, bottomSheetModalRef
                             <Image source={{ uri: song.album_art }} style={styles.albumArt} />
                             
                             <View style={styles.songInfo}>
-                                <Text style={styles.title}>{song.title}</Text>
-                                <Text style={styles.artist}>{song.artists.join(', ')}</Text>
-                                <Text style={styles.album}>{song.album}</Text>
+                                <Text style={styles.title}>{song.title || 'Untitled'}</Text>
+                                <Text style={styles.artist}>{song.artists?.join(', ') || 'Unknown Artist'}</Text>
+                                <Text style={styles.album}>{song.album || 'Unknown Album'}</Text>
                             </View>
 
                             <View style={styles.controls}>
@@ -249,14 +244,13 @@ export function SongDetailsSheet({ song, isVisible, onClose, bottomSheetModalRef
                                 <View style={styles.detailRow}>
                                     <Text style={styles.detailLabel}>Release Date</Text>
                                     <Text style={styles.detailValue}>
-                                        {new Date(song.added_at).toLocaleDateString()}
+                                        {song.added_at ? new Date(song.added_at).toLocaleDateString() : 'Unknown'}
                                     </Text>
                                 </View>
                                 <View style={styles.detailRow}>
                                     <Text style={styles.detailLabel}>Duration</Text>
                                     <Text style={styles.detailValue}>
-                                        {Math.floor(song.duration_ms / 60000)}:
-                                        {String(Math.floor((song.duration_ms % 60000) / 1000)).padStart(2, '0')}
+                                        {song.duration_ms ? `${Math.floor(song.duration_ms / 60000)}:${String(Math.floor((song.duration_ms % 60000) / 1000)).padStart(2, '0')}` : '--:--'}
                                     </Text>
                                 </View>
                                 {song.genres && song.genres.length > 0 && (

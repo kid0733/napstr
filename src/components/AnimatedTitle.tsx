@@ -101,15 +101,17 @@ export function AnimatedTitle({ title }: AnimatedTitleProps) {
 const localStyles = StyleSheet.create({
     outerContainer: {
         width: '100%',
-        alignItems: 'center',
-        justifyContent: 'center',
+        alignItems: 'flex-start',
+        justifyContent: 'flex-start',
+        marginLeft: 0,
     },
     container: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        width: 280,
-        alignSelf: 'center',
+        justifyContent: 'flex-start',
+        width: '100%',
+        alignSelf: 'flex-start',
+        marginLeft: 0,
     },
     prefix: {
         zIndex: 1,

@@ -62,6 +62,7 @@ export default function TabsLayout() {
                         headerShown: false,
                         tabBarStyle: { display: 'none' }
                     }}
+                    initialRouteName="(home)/index"
                 >
                     <Tabs.Screen
                         name="(home)/index"
@@ -127,7 +128,7 @@ const layoutStyles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
+        marginRight: `5%`,
     },
     menuSection: {
         height: 60,

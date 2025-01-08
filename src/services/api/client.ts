@@ -44,7 +44,7 @@ const addAuthInterceptor = (client: AxiosInstance) => {
             // Log request for debugging
             console.log(`[${new Date().toISOString()}] ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
             
-            const token = await AsyncStorage.getItem('token');
+            const token = await AsyncStorage.getItem('userToken');
             if (token) {
                 config.headers.Authorization = `Bearer ${token}`;
             }
@@ -100,7 +100,7 @@ const addResponseInterceptor = (client: AxiosInstance) => {
             if (error.response?.status === 401 && !originalRequest._retry) {
                 originalRequest._retry = true;
                 try {
-                    await AsyncStorage.multiRemove(['user', 'token']);
+                    await AsyncStorage.multiRemove(['user', 'userToken']);
                     return Promise.reject(error);
                 } catch (refreshError) {
                     return Promise.reject(refreshError);

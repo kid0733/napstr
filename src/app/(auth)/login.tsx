@@ -32,9 +32,11 @@ export default function LoginScreen() {
             setIsLoading(true);
             setError('');
             console.log('[LoginScreen] Calling login service...');
-            await login(identifier, password);
-            console.log('[LoginScreen] Login successful, navigating...');
-            router.replace('/(tabs)/(songs)');
+            const result = await login(identifier, password);
+            if (result.success) {
+                console.log('[LoginScreen] Login successful, navigating...');
+                router.replace('/(tabs)/(home)');
+            }
         } catch (error) {
             console.error('[LoginScreen] Login failed:', {
                 error: error instanceof Error ? error.message : 'Unknown error',
@@ -52,7 +54,7 @@ export default function LoginScreen() {
             setError('');
             const { user, token } = await signIn();
             await loginWithCredentials(user, token);
-            router.replace('/(tabs)/(songs)');
+            router.replace('/(tabs)/(home)');
         } catch (error) {
             console.error('Google sign in error:', error);
             setError('Google sign in failed');

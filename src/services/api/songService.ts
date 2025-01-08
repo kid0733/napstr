@@ -11,6 +11,18 @@ export interface Song {
     added_at: Date;
 }
 
+export interface GetAllOptions {
+    limit?: number;
+    page?: number;
+    sort?: 'alphabetical' | 'smart' | 'latest' | 'random';
+    fromSongId?: string;
+    fromTitle?: string;
+    after?: boolean;
+    search?: string;
+    genre?: string;
+    artist?: string;
+}
+
 class SongService {
     private static instance: SongService;
     private constructor() {}
@@ -22,13 +34,14 @@ class SongService {
         return SongService.instance;
     }
 
-    async getAll(page = 1, limit = 1000): Promise<{ songs: Song[]; total: number }> {
+    async getAll(options: GetAllOptions = {}): Promise<{ songs: Song[]; total: number }> {
         try {
-            console.log(`[${new Date().toISOString()}] Starting getAll request`);
-            const response = await apiClient.get('/api/v1/songs', {
-                params: { page, limit }
-            });
-            return response.data;
+            console.log(`[${new Date().toISOString()}] Starting getAll request with options:`, options);
+            const response = await apiClient.get('/api/v1/songs', { params: options });
+            return {
+                songs: response.data.songs || [],
+                total: response.data.total || 0
+            };
         } catch (error) {
             const axiosError = error as AxiosError;
             console.error(`[${new Date().toISOString()}] API Error (${Date.now() - new Date().getTime()}ms):`, {

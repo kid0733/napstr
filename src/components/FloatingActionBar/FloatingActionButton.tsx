@@ -35,7 +35,7 @@ export const FloatingActionButton: React.FC<FloatingActionButtonProps> = ({
   const animatedStyle = useAnimatedStyle(() => {
     return {
       transform: [
-        { scale: withTiming(isBarActive ? 1 : 0.7, { duration: 300 }) }
+        { scale: 0.7}
       ]
     };
   });

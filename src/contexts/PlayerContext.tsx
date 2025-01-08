@@ -8,6 +8,7 @@ import { ShuffleManager } from '@/utils/shuffleManager';
 import { Platform } from 'react-native';
 import DownloadManager from '@/services/DownloadManager';
 import { setupTrackPlayer } from '@/services/trackPlayerSetup';
+import { songService } from '@/services/api/songService';
 
 type PlaySongFunction = (song: Song, queue?: Song[]) => Promise<void>;
 type PlayNextFunction = () => Promise<void>;
@@ -34,7 +35,6 @@ export interface PlayerContextType {
     seek: (position: number) => Promise<void>;
     setQueue: (queue: Song[], index: number) => void;
     currentTrack: Song | null;
-    playTrack: (song: Song) => Promise<void>;
     togglePlayback: () => Promise<void>;
 }
 
@@ -59,7 +59,6 @@ const defaultContext: PlayerContextType = {
     seek: async () => {},
     setQueue: () => {},
     currentTrack: null,
-    playTrack: async () => {},
     togglePlayback: async () => {},
 };
 
@@ -166,8 +165,33 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, [position, duration]);
 
+    const getAlphabeticalQueue = useCallback((songs: Song[], currentSong: Song) => {
+        // Sort all songs alphabetically by title
+        const sortedSongs = songs
+            .filter(s => s.track_id !== currentSong.track_id)
+            .sort((a, b) => a.title.localeCompare(b.title));
+
+        // Find where current song should be in alphabetical order
+        const currentIndex = sortedSongs.findIndex(s => 
+            currentSong.title.localeCompare(s.title) <= 0
+        );
+
+        if (currentIndex === -1) {
+            // Current song would be last
+            return [...sortedSongs, currentSong];
+        }
+
+        // Insert current song at the right alphabetical position
+        return [
+            ...sortedSongs.slice(0, currentIndex),
+            currentSong,
+            ...sortedSongs.slice(currentIndex)
+        ];
+    }, []);
+
     const playSong = useCallback(async (song: Song, newQueue?: Song[]) => {
         try {
+            console.log('Starting playSong with:', { songTitle: song.title });
             setIsLoading(true);
             loadingRef.current = true;
 
@@ -190,22 +214,105 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
             // Update state
             dispatch({ type: 'SET_CURRENT_SONG', payload: song });
+            
+            // Initialize queue with provided songs or fetch alphabetically
+            let initialQueue: Song[];
             if (newQueue) {
+                initialQueue = [song, ...newQueue.filter(s => s.track_id !== song.track_id)];
+            } else {
+                // Get alphabetically sorted songs starting from current song's title
+                const response = await api.songs.getAll({ 
+                    sort: 'alphabetical',
+                    fromTitle: song.title,
+                    limit: 50
+                });
+                
+                // Filter out current song and ensure it's first in queue
+                initialQueue = [
+                    song,
+                    ...(response.songs || []).filter(s => s.track_id !== song.track_id)
+                ];
+            }
+
+            // Try to get recommendations if we have network
+            try {
+                if (!state.isShuffled) {
+                    // In non-shuffled mode, get more alphabetical songs for continuation
+                    const lastSong = initialQueue[initialQueue.length - 1];
+                    const nextAlphabetical = await api.songs.getAll({
+                        sort: 'alphabetical',
+                        fromTitle: lastSong.title,
+                        limit: 25,
+                        after: true
+                    });
+                    
+                    if (nextAlphabetical.songs?.length) {
+                        const newSongs = nextAlphabetical.songs.filter(
+                            s => !initialQueue.some(q => q.track_id === s.track_id)
+                        );
+                        initialQueue = [...initialQueue, ...newSongs];
+                    }
+                } else {
+                    // In shuffled mode, get recommendations
+                    const recommendedSongs = await api.songs.getAll({ 
+                        fromSongId: song.track_id,
+                        sort: 'smart',
+                        limit: 25
+                    });
+                    
+                    if (recommendedSongs.songs?.length) {
+                        const newSongs = recommendedSongs.songs.filter(
+                            s => !initialQueue.some(q => q.track_id === s.track_id)
+                        );
+                        initialQueue = [...initialQueue, ...newSongs];
+                    }
+                }
+            } catch (error) {
+                console.log('Could not fetch additional songs:', error);
+            }
+            
+            // Update state based on shuffle status
+            if (state.isShuffled) {
+                // Save alphabetical queue before shuffling
+                dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: initialQueue });
+                
+                // Apply random shuffle
+                const shuffledQueue = smartShuffle(initialQueue, song);
+                
                 dispatch({ 
                     type: 'SET_QUEUE', 
                     payload: { 
-                        queue: newQueue,
-                        currentIndex: newQueue.findIndex(s => s.track_id === song.track_id)
+                        queue: shuffledQueue,
+                        currentIndex: 0
                     } 
                 });
+                queueManager.setQueue(shuffledQueue, 0);
+            } else {
+                dispatch({ 
+                    type: 'SET_QUEUE', 
+                    payload: { 
+                        queue: initialQueue,
+                        currentIndex: 0
+                    } 
+                });
+                dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: initialQueue });
+                queueManager.setQueue(initialQueue, 0);
             }
+            
+            queueManager.setShuffled(state.isShuffled);
+            
+            console.log('Queue setup complete:', {
+                queueLength: initialQueue.length,
+                isShuffled: state.isShuffled,
+                currentSong: song.title
+            });
         } catch (error) {
             console.error('Error playing song:', error);
         } finally {
             setIsLoading(false);
             loadingRef.current = false;
         }
-    }, []);
+    }, [state.isShuffled]);
 
     // Track Player Events
     useTrackPlayerEvents([Event.PlaybackState, Event.PlaybackError, Event.PlaybackQueueEnded], async (event) => {
@@ -233,6 +340,47 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                     const nextSong = state.queue[state.currentIndex + 1];
                     if (nextSong) {
                         await playSong(nextSong, state.queue);
+                    }
+                } else {
+                    // Queue ended and no repeat mode, add recommended songs
+                    try {
+                        // Get recommended songs based on last played song
+                        const lastSong = state.queue[state.currentIndex];
+                        const recommendedSongs = await api.songs.getAll({
+                            fromSongId: lastSong.track_id,
+                            limit: 10
+                        });
+
+                        if (recommendedSongs.songs && recommendedSongs.songs.length > 0) {
+                            // Add recommended songs to queue
+                            const updatedQueue = [...state.queue, ...recommendedSongs.songs];
+                            dispatch({
+                                type: 'SET_QUEUE',
+                                payload: {
+                                    queue: updatedQueue,
+                                    currentIndex: state.queue.length // Index of first new song
+                                }
+                            });
+
+                            // Start playing the first recommended song
+                            await playSong(recommendedSongs.songs[0], updatedQueue);
+                        } else {
+                            // Fallback to random songs if no recommendations
+                            const randomSongs = await api.songs.getAll({ limit: 10 });
+                            if (randomSongs.songs && randomSongs.songs.length > 0) {
+                                const updatedQueue = [...state.queue, ...randomSongs.songs];
+                                dispatch({
+                                    type: 'SET_QUEUE',
+                                    payload: {
+                                        queue: updatedQueue,
+                                        currentIndex: state.queue.length
+                                    }
+                                });
+                                await playSong(randomSongs.songs[0], updatedQueue);
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error getting recommended songs:', error);
                     }
                 }
             } catch (error) {
@@ -276,67 +424,80 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, [state.currentIndex, state.queue, playSong]);
 
-    const toggleShuffle = useCallback(() => {
+    const smartShuffle = useCallback((songs: Song[], currentSong: Song) => {
+        // Keep current song first
+        const otherSongs = songs.filter(s => s.track_id !== currentSong.track_id);
+        
+        // Completely random shuffle with Fisher-Yates algorithm
+        for (let i = otherSongs.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [otherSongs[i], otherSongs[j]] = [otherSongs[j], otherSongs[i]];
+        }
+
+        // Add some chaos by reversing sections randomly
+        const sectionSize = Math.floor(Math.random() * 10) + 5; // Random section size between 5-15
+        for (let i = 0; i < otherSongs.length; i += sectionSize) {
+            if (Math.random() > 0.5) { // 50% chance to reverse each section
+                const section = otherSongs.slice(i, i + sectionSize);
+                section.reverse();
+                otherSongs.splice(i, section.length, ...section);
+            }
+        }
+
+        return [currentSong, ...otherSongs];
+    }, []);
+
+    const toggleShuffle = useCallback(async () => {
         try {
-            const { queue, currentIndex } = shuffleManager.toggleShuffle();
-            dispatch({ type: 'SET_SHUFFLE', payload: !state.isShuffled });
-            dispatch({ 
-                type: 'SET_QUEUE', 
-                payload: { queue, currentIndex } 
-            });
+            if (!state.isShuffled) {
+                // Turning shuffle on
+                const currentSong = state.currentSong;
+                if (!currentSong) return;
+
+                // Save original (alphabetical) queue before shuffling
+                const alphabeticalQueue = getAlphabeticalQueue(state.queue, currentSong);
+                dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: alphabeticalQueue });
+
+                // Apply random shuffle
+                const shuffledQueue = smartShuffle(state.queue, currentSong);
+
+                // Update state
+                dispatch({ type: 'SET_SHUFFLE', payload: true });
+                dispatch({
+                    type: 'SET_QUEUE',
+                    payload: {
+                        queue: shuffledQueue,
+                        currentIndex: 0
+                    }
+                });
+
+                // Update queue manager
+                queueManager.setQueue(shuffledQueue, 0);
+                queueManager.setShuffled(true);
+            } else {
+                // Turning shuffle off - restore alphabetical queue
+                const currentSong = state.currentSong;
+                if (!currentSong) return;
+
+                const alphabeticalQueue = getAlphabeticalQueue(state.queue, currentSong);
+                const currentIndex = alphabeticalQueue.findIndex(s => s.track_id === currentSong.track_id);
+
+                dispatch({
+                    type: 'SET_QUEUE',
+                    payload: {
+                        queue: alphabeticalQueue,
+                        currentIndex: Math.max(0, currentIndex)
+                    }
+                });
+                queueManager.setQueue(alphabeticalQueue, Math.max(0, currentIndex));
+                
+                dispatch({ type: 'SET_SHUFFLE', payload: false });
+                queueManager.setShuffled(false);
+            }
         } catch (error) {
             console.error('Error toggling shuffle:', error);
         }
-    }, [state.isShuffled, state.queue, state.currentIndex]);
-
-    const playTrack = useCallback(async (song: Song) => {
-        try {
-            console.log('PlayTrack called:', {
-                songId: song.track_id,
-                songTitle: song.title,
-                audioUrl: `https://music.napstr.uk/songs/${song.track_id}.mp3`
-            });
-
-            setIsLoading(true);
-            loadingRef.current = true;
-
-            // Reset the queue
-            console.log('Resetting track player queue');
-            await TrackPlayer.reset();
-
-            // Prepare the track
-            const track = {
-                id: song.track_id,
-                url: `https://music.napstr.uk/songs/${song.track_id}.mp3`,
-                title: song.title,
-                artist: song.artists.join(', '),
-                artwork: song.album_art,
-                duration: song.duration_ms / 1000,
-            };
-
-            console.log('Adding track to player:', track);
-            await TrackPlayer.add(track);
-
-            console.log('Starting playback');
-            await TrackPlayer.play();
-
-            console.log('Updating player state');
-            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
-            dispatch({ type: 'SET_PLAYING', payload: true });
-
-            console.log('Playback started successfully');
-        } catch (error) {
-            console.error('Detailed error in playTrack:', {
-                error,
-                songId: song.track_id,
-                songTitle: song.title
-            });
-            throw error;
-        } finally {
-            setIsLoading(false);
-            loadingRef.current = false;
-        }
-    }, []);
+    }, [state.isShuffled, state.currentSong, state.queue, smartShuffle, getAlphabeticalQueue]);
 
     const togglePlayback = useCallback(async () => {
         try {
@@ -387,8 +548,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             dispatch({ type: 'SET_QUEUE', payload: { queue, currentIndex: index } });
             dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: queue });
         },
-        currentTrack: null,
-        playTrack,
+        currentTrack: state.currentSong,
         togglePlayback,
     };
 

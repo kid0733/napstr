@@ -23,48 +23,55 @@ export default function LikedSongs() {
     const navigation = useNavigation<NavigationProp>();
     const { user, isAuthenticated } = useUser();
     const { likedSongs, isLoading, error } = useLikes();
-    const { currentTrack, isPlaying, playTrack, togglePlayback } = usePlayer();
+    const { currentTrack, isPlaying, playSong, togglePlayback } = usePlayer();
     const [songs, setSongs] = useState<Song[]>([]);
     const [sortBy, setSortBy] = useState<SortOption>('recently_added');
     const [filterBy, setFilterBy] = useState<FilterOption>('all');
     const [isLoadingSongs, setIsLoadingSongs] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [hasMorePages, setHasMorePages] = useState(true);
+    const PAGE_SIZE = 20;
 
-    useEffect(() => {
-        if (!isAuthenticated) {
-            navigation.navigate('login');
-            return;
-        }
-    }, [isAuthenticated, navigation]);
-
-    // Load songs data
+    // Combined auth check and song loading with pagination
     useEffect(() => {
         const loadSongs = async () => {
-            if (!isAuthenticated) return;
+            if (!isAuthenticated) {
+                navigation.navigate('login');
+                return;
+            }
             
             try {
-                console.log('Loading liked songs...');
-                console.log('Current likedSongs set:', likedSongs);
-                
+                console.log('Loading liked songs page:', currentPage);
                 setIsLoadingSongs(true);
                 const songStorage = SongStorage.getInstance();
                 const loadedSongs: Song[] = [];
                 
                 if (likedSongs && likedSongs.size > 0) {
-                    console.log('Found', likedSongs.size, 'liked songs');
-                    for (const trackId of likedSongs) {
-                        console.log('Loading song:', trackId);
+                    // Get paginated subset of liked songs
+                    const startIndex = (currentPage - 1) * PAGE_SIZE;
+                    const endIndex = startIndex + PAGE_SIZE;
+                    const paginatedIds = Array.from(likedSongs).slice(startIndex, endIndex);
+                    
+                    console.log(`Loading songs ${startIndex + 1} to ${endIndex}`);
+                    for (const trackId of paginatedIds) {
                         const song = await songStorage.getSong(trackId);
                         if (song) {
-                            console.log('Loaded song:', song.title);
                             loadedSongs.push(song);
                         }
                     }
+
+                    // Update pagination state
+                    setHasMorePages(endIndex < likedSongs.size);
                 } else {
                     console.log('No liked songs found');
+                    setHasMorePages(false);
                 }
                 
-                setSongs(loadedSongs);
-                console.log('Finished loading songs, total:', loadedSongs.length);
+                if (currentPage === 1) {
+                    setSongs(loadedSongs);
+                } else {
+                    setSongs(prev => [...prev, ...loadedSongs]);
+                }
             } catch (error) {
                 console.error('Error loading songs:', error);
             } finally {
@@ -73,7 +80,23 @@ export default function LikedSongs() {
         };
 
         loadSongs();
-    }, [likedSongs, isAuthenticated]);
+    }, [likedSongs, isAuthenticated, navigation, currentPage]);
+
+    // Load more songs when reaching the end of the list
+    const loadMore = useCallback(() => {
+        if (!isLoadingSongs && hasMorePages) {
+            setCurrentPage(prev => prev + 1);
+        }
+    }, [isLoadingSongs, hasMorePages]);
+
+    const renderFooter = useCallback(() => {
+        if (!isLoadingSongs) return null;
+        return (
+            <View style={styles.loadingFooter}>
+                <ActivityIndicator size="small" color={colors.greenPrimary} />
+            </View>
+        );
+    }, [isLoadingSongs]);
 
     // Sort songs
     const sortedSongs = useCallback(() => {
@@ -112,24 +135,28 @@ export default function LikedSongs() {
             .map(({ song }) => song);
     }, [sortedSongs, filterBy]);
 
-    const handleSongPress = useCallback(async (song: Song) => {
-        if (currentTrack?.track_id === song.track_id) {
-            await togglePlayback();
-        } else {
-            await playTrack(song);
+    const handlePlayPress = useCallback(async (song: Song) => {
+        try {
+            if (currentTrack?.track_id === song.track_id) {
+                await togglePlayback();
+            } else {
+                await playSong(song);
+            }
+        } catch (error) {
+            console.error('Error playing song:', error);
         }
-    }, [currentTrack, togglePlayback, playTrack]);
+    }, [currentTrack, togglePlayback, playSong]);
 
     const renderSongItem = useCallback(({ item }: { item: Song }) => (
         <SongItem
             song={item}
             allSongs={songs}
-            onPress={handleSongPress}
+            onPress={handlePlayPress}
             onTogglePlay={togglePlayback}
             isCurrentSong={currentTrack?.track_id === item.track_id}
             isPlaying={isPlaying}
         />
-    ), [songs, currentTrack, isPlaying, handleSongPress, togglePlayback]);
+    ), [songs, currentTrack, isPlaying, handlePlayPress, togglePlayback]);
 
     if (isLoading || isLoadingSongs) {
         return (
@@ -158,7 +185,6 @@ export default function LikedSongs() {
                     <Pressable 
                         style={styles.controlButton}
                         onPress={() => {
-                            // Toggle sort options
                             const options: SortOption[] = ['recently_added', 'alphabetical', 'artist'];
                             const currentIndex = options.indexOf(sortBy);
                             setSortBy(options[(currentIndex + 1) % options.length]);
@@ -169,7 +195,6 @@ export default function LikedSongs() {
                     <Pressable 
                         style={styles.controlButton}
                         onPress={() => {
-                            // Toggle filter options
                             const options: FilterOption[] = ['all', 'downloaded', 'not_downloaded'];
                             const currentIndex = options.indexOf(filterBy);
                             setFilterBy(options[(currentIndex + 1) % options.length]);
@@ -196,6 +221,9 @@ export default function LikedSongs() {
                 renderItem={renderSongItem}
                 estimatedItemSize={72}
                 contentContainerStyle={styles.listContent}
+                onEndReached={loadMore}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={renderFooter}
             />
         </View>
     );
@@ -247,5 +275,9 @@ const styles = StyleSheet.create({
     errorText: {
         color: colors.error,
         textAlign: 'center',
+    },
+    loadingFooter: {
+        padding: 16,
+        alignItems: 'center',
     },
 }); 

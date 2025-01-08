@@ -1,3 +1,4 @@
+import { apiClient } from './api/client';
 import axios from 'axios';
 
 // VPS Configuration
@@ -65,6 +66,8 @@ export interface GetAllOptions {
     order?: 'asc' | 'desc';
     limit?: number;
     offset?: number;
+    fromSongId?: string;
+    genre?: string;
 }
 
 export const api = {
@@ -77,11 +80,15 @@ export const api = {
                 ...(sort && { sort }),
                 ...(order && { order })
             });
-            const response = await axiosInstance.get(`/api/v1/songs?${params}`);
+            const response = await apiClient.get(`/api/v1/songs?${params}`);
             return response.data;
         },
         getById: async (id: string): Promise<Song> => {
-            const response = await axios.get(`${API_BASE_URL}/api/v1/songs/${id}`);
+            const response = await apiClient.get(`/api/v1/songs/${id}`);
+            return response.data;
+        },
+        getRandom: async (): Promise<Song> => {
+            const response = await apiClient.get('/api/v1/songs/random-any');
             return response.data;
         },
         getStreamUrl: async (trackId: string): Promise<string> => {
@@ -91,7 +98,7 @@ export const api = {
     lyrics: {
         getLyrics: async (trackId: string): Promise<LyricsData | null> => {
             try {
-                const response = await axios.get(`${API_BASE_URL}/api/v1/lyrics/${trackId}`);
+                const response = await apiClient.get(`/api/v1/lyrics/${trackId}`);
                 return response.data;
             } catch (error) {
                 if (axios.isAxiosError(error) && error.response?.status === 404) {
@@ -105,7 +112,7 @@ export const api = {
         getLikedSongs: async (page = 1, limit = 20): Promise<PaginatedResponse<Song>> => {
             try {
                 console.log('Making API request to /api/v1/liked-songs');
-                const response = await axiosInstance.get(`/api/v1/liked-songs`);
+                const response = await apiClient.get(`/api/v1/liked-songs`);
                 console.log('Raw API response:', response);
                 console.log('Response data:', response.data);
                 console.log('Response status:', response.status);
@@ -122,12 +129,12 @@ export const api = {
         },
         likeSong: async (trackId: string): Promise<void> => {
             console.log('Liking song:', trackId);
-            await axiosInstance.post(`/api/v1/liked-songs/${trackId}`);
+            await apiClient.post(`/api/v1/liked-songs/${trackId}`);
             console.log('Song liked successfully');
         },
         unlikeSong: async (trackId: string): Promise<void> => {
             console.log('Unliking song:', trackId);
-            await axiosInstance.delete(`/api/v1/liked-songs/${trackId}`);
+            await apiClient.delete(`/api/v1/liked-songs/${trackId}`);
             console.log('Song unliked successfully');
         }
     }

@@ -325,12 +325,12 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
 
                                     <View style={styles.songInfo}>
                                         <Text style={styles.title} numberOfLines={1}>
-                                            {displaySong.title}
+                                            {displaySong.title || 'No song playing'}
                                         </Text>
                                         <Text style={styles.artist} numberOfLines={1}>
                                             {Array.isArray(displaySong.artists) 
                                                 ? displaySong.artists.join(', ')
-                                                : displaySong.artists}
+                                                : displaySong.artists || 'Unknown Artist'}
                                         </Text>
                                     </View>
                                 </View>

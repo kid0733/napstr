@@ -9,8 +9,8 @@ interface UserContextType {
     user: User | null;
     isAuthenticated: boolean;
     isLoading: boolean;
-    login: (identifier: string, password: string) => Promise<void>;
-    loginWithCredentials: (user: User, token: string) => Promise<void>;
+    login: (identifier: string, password: string) => Promise<{ success: boolean }>;
+    loginWithCredentials: (user: User, token: string) => Promise<{ success: boolean }>;
     register: (username: string, email: string, password: string) => Promise<void>;
     logout: () => Promise<void>;
 }
@@ -53,20 +53,32 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const login = async (identifier: string, password: string) => {
         try {
             const { user: userData, token } = await userService.login(identifier, password);
-            await AsyncStorage.setItem('userToken', token);
-            await AsyncStorage.setItem('userData', JSON.stringify(userData));
+            console.log('[UserContext] Saving credentials...');
+            await Promise.all([
+                AsyncStorage.setItem('userToken', token),
+                AsyncStorage.setItem('userData', JSON.stringify(userData))
+            ]);
+            console.log('[UserContext] Credentials saved successfully');
             setUser(userData);
+            return { success: true };
         } catch (error) {
+            console.error('[UserContext] Login error:', error);
             throw error;
         }
     };
 
     const loginWithCredentials = async (userData: User, token: string) => {
         try {
-            await AsyncStorage.setItem('userToken', token);
-            await AsyncStorage.setItem('userData', JSON.stringify(userData));
+            console.log('[UserContext] Saving credentials...');
+            await Promise.all([
+                AsyncStorage.setItem('userToken', token),
+                AsyncStorage.setItem('userData', JSON.stringify(userData))
+            ]);
+            console.log('[UserContext] Credentials saved successfully');
             setUser(userData);
+            return { success: true };
         } catch (error) {
+            console.error('[UserContext] Login with credentials error:', error);
             throw error;
         }
     };

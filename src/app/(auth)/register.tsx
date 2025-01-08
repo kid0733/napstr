@@ -26,7 +26,7 @@ export default function RegisterScreen() {
             setIsLoading(true);
             setError('');
             await register(username, email, password);
-            router.replace('/(tabs)/(songs)');
+            router.replace('/(tabs)/(home)');
         } catch (error) {
             setError(error instanceof Error ? error.message : 'Registration failed');
         } finally {
@@ -40,7 +40,7 @@ export default function RegisterScreen() {
             setError('');
             const { user, token } = await signIn();
             await loginWithCredentials(user, token);
-            router.replace('/(tabs)/(songs)');
+            router.replace('/(tabs)/(home)');
         } catch (error) {
             console.error('Google sign in error:', error);
             setError('Google sign in failed');

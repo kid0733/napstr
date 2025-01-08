@@ -5,6 +5,7 @@ import { SortOptionsBar, SortOption } from '@/components/Songs/SortOptionsBar';
 import { api, Song } from '@/services/api';
 import { PlayerContext, PlayerContextType } from '@/contexts/PlayerContext';
 import { useState, useEffect, useContext, useCallback } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SongsScreen() {
     const [songs, setSongs] = useState<Song[]>([]);
@@ -14,7 +15,29 @@ export default function SongsScreen() {
     const player = useContext<PlayerContextType>(PlayerContext);
 
     useEffect(() => {
-        loadSongs();
+        const waitForTokenAndLoad = async () => {
+            let retries = 0;
+            const maxRetries = 10;
+            const retryDelay = 1000; // 1 second
+
+            while (retries < maxRetries) {
+                const token = await AsyncStorage.getItem('userToken');
+                if (token) {
+                    await loadSongs();
+                    break;
+                }
+                console.log('Waiting for token...');
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                retries++;
+            }
+
+            if (retries === maxRetries) {
+                console.error('Failed to get token after maximum retries');
+                setLoading(false);
+            }
+        };
+
+        waitForTokenAndLoad();
     }, []);
 
     const loadSongs = async (refresh: boolean = false) => {
@@ -25,9 +48,16 @@ export default function SongsScreen() {
         }
 
         try {
-            const response = await api.songs.getAll();
+            const token = await AsyncStorage.getItem('userToken');
+            if (!token) {
+                console.log('No token available, skipping liked songs fetch');
+                setSongs([]);
+                return;
+            }
+
+            const response = await api.likes.getLikedSongs();
             const songs = response?.songs || [];
-            console.log('Loaded songs:', songs.length);
+            console.log('Loaded liked songs:', songs.length);
             
             // Sort songs alphabetically
             const sortedSongs = [...songs].sort((a, b) => 
@@ -41,7 +71,7 @@ export default function SongsScreen() {
                 player.setQueue?.(sortedSongs, 0);
             }
         } catch (error) {
-            console.error('Error loading songs:', error);
+            console.error('Error loading liked songs:', error);
             setSongs([]); // Set empty array on error
         } finally {
             setLoading(false);

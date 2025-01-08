@@ -127,24 +127,16 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
   const backgroundStyle = useAnimatedStyle(() => {
     return {
       opacity: 1,
-      backgroundColor: 'rgba(45,52,35,0.0)',
-      style: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.15,
-        shadowRadius: 8,
-      },
-      elevation: 5,
+      backgroundColor: 'transparent',
       borderRadius: 35,
       overflow: 'hidden',
-      borderWidth: 1,
-      borderColor: 'rgba(255,255,255,0.1)',
+      borderWidth: 0,
     };
   });
 
   const backgroundImageStyle = useAnimatedStyle(() => {
     return {
-      opacity: backgroundOpacity.value * 0.5,
+      opacity: 0,
       transform: [
         { translateX: bgOffsetX.value },
         { translateY: bgOffsetY.value },
@@ -162,18 +154,6 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
       onPress={handleActivation}
     >
       <Animated.View style={[animatedStyle]}>
-        {/* Background Layer */}
-        <Animated.View style={[styles.backgroundContainer, backgroundStyle]}>
-          <Animated.View style={backgroundImageStyle}>
-            <ImageBackground
-              source={require('../../../assets/grain_menu.png')}
-              style={styles.background}
-              imageStyle={styles.backgroundImage}
-              blurRadius={1.25}
-            />
-          </Animated.View>
-        </Animated.View>
-        
         {/* Content Layer */}
         <View style={[styles.content]}>
           <View style={[getDirection(position)]}>
@@ -191,6 +171,8 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
                 {...size}
                 key={index}
                 onPress={async () => {
+                  if (index === currentIndex) return; // Don't do anything if already selected
+                  
                   if (Platform.OS === 'ios') {
                     try {
                       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -199,10 +181,8 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
                     }
                   }
                   
-                  if (index !== currentIndex) {
-                    setCurrentIndex(index);
-                    onPress(index);
-                  }
+                  setCurrentIndex(index);
+                  onPress(index);
                   handleActivation();
                 }}
                 active={index === currentIndex}
@@ -268,21 +248,21 @@ const getDirection = (position: 'top' | 'bottom' | 'left' | 'right') => {
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
+
     zIndex: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    width: '90%',
-    left: '5%',
+    width: '70%',
+    marginHorizontal: 'auto',
   },
   backgroundContainer: {
     position: 'absolute',
-    width: '100%',
+    width: '80%',
     height: '100%',
     justifyContent: 'center',
   },
   background: {
-    width: '100%',
+    width: '80%',
     height: '100%',
   },
   backgroundImage: {
