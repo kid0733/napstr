@@ -31,12 +31,17 @@ export class QueueManager {
         // Guard against empty queue
         if (!newQueue || newQueue.length === 0) {
             console.warn('QueueManager - Attempted to set empty queue');
+            this.queue = [];
+            this.currentIndex = -1;
             return;
         }
 
-        // Clean up the queue before setting new one
+        // Validate index
+        const validIndex = Math.min(Math.max(0, newIndex), newQueue.length - 1);
+        
+        // Set the new queue and index
         this.queue = [...newQueue];
-        this.currentIndex = Math.min(Math.max(0, newIndex), this.queue.length - 1);
+        this.currentIndex = validIndex;
 
         // If this is the first time setting the queue or original queue is empty
         if (this.originalQueue.length === 0) {
@@ -44,6 +49,12 @@ export class QueueManager {
                 cleanTitleForSort(a.title).localeCompare(cleanTitleForSort(b.title))
             );
         }
+
+        console.log('QueueManager - Queue updated:', {
+            queueLength: this.queue.length,
+            currentIndex: this.currentIndex,
+            currentSong: this.queue[this.currentIndex]?.title
+        });
     }
 
     setShuffled(shuffled: boolean) {
@@ -104,10 +115,19 @@ export class QueueManager {
     }
 
     cleanupQueue() {
-        // Remove all songs before current index
-        if (this.currentIndex > 0) {
-            this.queue = this.queue.slice(this.currentIndex);
-            this.currentIndex = 0;
+        // Only cleanup if we have songs before current index
+        if (this.currentIndex > 0 && this.queue.length > this.currentIndex) {
+            const currentSong = this.getCurrentSong();
+            if (currentSong) {
+                // Keep current song and future songs
+                this.queue = this.queue.slice(this.currentIndex);
+                this.currentIndex = 0;
+                
+                console.log('QueueManager - Queue cleaned up:', {
+                    newLength: this.queue.length,
+                    currentSong: this.getCurrentSong()?.title
+                });
+            }
         }
     }
 } 

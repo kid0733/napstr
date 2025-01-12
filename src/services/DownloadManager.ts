@@ -194,12 +194,12 @@ export default class DownloadManager {
             }
 
             // Get stream URL
-            const { url } = await api.songs.getStreamUrl(song.track_id);
+            const streamUrl = await api.songs.getStreamUrl(song.track_id);
             await this.logToFile(`Got stream URL for song: ${song.track_id}`);
 
             // Create download resumable
             const downloadResumable = FileSystem.createDownloadResumable(
-                url,
+                streamUrl,
                 filePath,
                 {
                     md5: true,

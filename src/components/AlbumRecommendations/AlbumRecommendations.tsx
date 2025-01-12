@@ -1,3 +1,20 @@
+/**
+ * Album Recommendations Component
+ * 
+ * A featured section that displays recommended albums in a horizontal scrollable list.
+ * Each album is presented as a card with artwork and metadata in a glass-morphic design.
+ * 
+ * Features:
+ * - Horizontal scrolling album cards
+ * - Blurred glass effect for album info
+ * - Cached album artwork with transitions
+ * - Loading and error states with retry
+ * - Album player modal integration
+ * - Pull data from /api/v1/albums/random endpoint
+ * 
+ * @module Components/AlbumRecommendations
+ */
+
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Dimensions, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
@@ -5,28 +22,39 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
 import { apiClient } from '@/services/api/client';
 import { Blur } from '@/components/Blur/Blur';
-import { AlbumDetailsSheet } from '@/components/AlbumDetails/AlbumDetailsSheet';
+import { AlbumPlayer } from '@/components/AlbumPlayer';
 import { Portal } from '@gorhom/portal';
 import { Song } from '@/services/api';
+import { usePlayer } from '@/contexts/PlayerContext';
+import { Album } from '@/types/album';
 
+// Screen dimensions for responsive card sizing
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const ALBUM_CARD_WIDTH = SCREEN_WIDTH * 0.7;
 
-interface Album {
-    _id: string;
-    title: string;
-    artists: string[];
-    album_art: string;
-    total_tracks: number;
-    added_at: string;
-    songs: Song[];
-}
-
+/**
+ * Props for the AlbumCard subcomponent
+ */
 interface AlbumCardProps {
+    /** Album data to display */
     album: Album;
+    /** Callback when card is pressed */
     onPress: (album: Album) => void;
 }
 
+/**
+ * Album Card Component
+ * 
+ * Displays a single album recommendation with:
+ * - Album artwork with fallback
+ * - Glass-morphic info overlay
+ * - Title, artist, and track count
+ * - Press state animations
+ * - Memory-disk image caching
+ * 
+ * @param props - Component properties
+ * @returns {JSX.Element} Rendered album card
+ */
 function AlbumCard({ album, onPress }: AlbumCardProps) {
     const defaultIcon = require('../../../assets/icon.png');
     
@@ -38,16 +66,18 @@ function AlbumCard({ album, onPress }: AlbumCardProps) {
             ]}
             onPress={() => onPress(album)}
         >
+            {/* Album artwork with caching */}
             <View style={styles.albumArtContainer}>
                 <Image 
-                    source={album.album_art ? { uri: album.album_art } : defaultIcon}
+                    source={album.artwork ? { uri: album.artwork } : defaultIcon}
                     style={styles.albumArtwork}
                     contentFit="cover"
                     cachePolicy="memory-disk"
-                    recyclingKey={`${album.title}-${album.album_art || 'default'}`}
+                    recyclingKey={`${album.title}-${album.artwork || 'default'}`}
                     transition={200}
                 />
             </View>
+            {/* Glass-morphic info overlay */}
             <View style={styles.albumInfoContainer}>
                 <View style={styles.albumInfoGlass}>
                     <Blur intensity={20} />
@@ -55,7 +85,7 @@ function AlbumCard({ album, onPress }: AlbumCardProps) {
                         {album.title}
                     </Text>
                     <Text style={styles.albumArtist} numberOfLines={1}>
-                        {album.artists.join(', ')}
+                        {album.artist}
                     </Text>
                     <Text style={styles.albumSongCount}>
                         {album.total_tracks} songs
@@ -66,16 +96,38 @@ function AlbumCard({ album, onPress }: AlbumCardProps) {
     );
 }
 
+/**
+ * Album Recommendations Component
+ * 
+ * Main component that manages:
+ * - Fetching random album recommendations
+ * - Displaying album cards in a horizontal scroll
+ * - Opening selected albums in the player modal
+ * - Loading and error states
+ * 
+ * Used in the home screen as a featured section.
+ * 
+ * @returns {JSX.Element} The album recommendations section
+ */
 export function AlbumRecommendations() {
+    // State management
     const [albums, setAlbums] = useState<Album[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
+    const { currentTrack, isPlaying } = usePlayer();
 
+    // Fetch albums on component mount
     useEffect(() => {
         fetchAlbums();
     }, []);
 
+    /**
+     * Fetches random album recommendations
+     * 
+     * Makes an API call to get 10 random albums and transforms
+     * the response data into our Album type format.
+     */
     const fetchAlbums = async () => {
         try {
             setIsLoading(true);
@@ -85,7 +137,20 @@ export function AlbumRecommendations() {
                     limit: 10
                 }
             });
-            setAlbums(response.data.albums || []);
+            // Transform API response to Album type
+            const transformedAlbums = response.data.albums.map((album: any) => ({
+                album_id: album._id,
+                title: album.title,
+                artist: album.artists[0],
+                artwork: album.album_art,
+                release_date: album.added_at,
+                total_tracks: album.total_tracks,
+                songs: album.songs || [],
+                genres: [],
+                duration_ms: 0,
+                added_at: album.added_at
+            }));
+            setAlbums(transformedAlbums);
         } catch (error) {
             setError('Failed to load albums');
         } finally {
@@ -93,14 +158,52 @@ export function AlbumRecommendations() {
         }
     };
 
-    const handleAlbumPress = useCallback((album: Album) => {
-        setSelectedAlbum(album);
+    /**
+     * Handles album selection
+     * 
+     * When an album is selected:
+     * 1. Fetches full album details including songs
+     * 2. Updates the selected album state
+     * 3. Opens the album player modal
+     * 
+     * Falls back to basic album display if song fetch fails
+     * 
+     * @param album - The selected album to display
+     */
+    const handleAlbumPress = useCallback(async (album: Album) => {
+        try {
+            // Fetch full album details including songs
+            const response = await apiClient.get(`/api/v1/albums/${album.album_id}`);
+            const fullAlbum = {
+                ...album,
+                songs: response.data.songs.map((song: any) => ({
+                    track_id: song.track_id,
+                    title: song.title,
+                    artists: song.artists,
+                    album: song.album,
+                    album_art: song.album_art,
+                    duration_ms: song.duration_ms,
+                    track_number: song.track_number,
+                    rating: song.rating,
+                    total_plays: song.total_plays
+                }))
+            };
+            setSelectedAlbum(fullAlbum);
+        } catch (error) {
+            console.error('Failed to fetch album details:', error);
+            // Still show the album even if fetching songs fails
+            setSelectedAlbum(album);
+        }
     }, []);
 
+    /**
+     * Closes the album player modal
+     */
     const handleCloseSheet = useCallback(() => {
         setSelectedAlbum(null);
     }, []);
 
+    // Loading state
     if (isLoading) {
         return (
             <View style={[styles.container, styles.centered]}>
@@ -109,6 +212,7 @@ export function AlbumRecommendations() {
         );
     }
 
+    // Error state with retry button
     if (error) {
         return (
             <View style={[styles.container, styles.centered]}>
@@ -122,6 +226,7 @@ export function AlbumRecommendations() {
 
     return (
         <>
+            {/* Main recommendations section */}
             <View style={styles.container}>
                 <Text style={styles.sectionTitle}>Recommended Albums</Text>
                 <ScrollView 
@@ -132,7 +237,7 @@ export function AlbumRecommendations() {
                 >
                     {albums.map((album) => (
                         <AlbumCard 
-                            key={album._id} 
+                            key={album.album_id} 
                             album={album} 
                             onPress={handleAlbumPress}
                         />
@@ -140,11 +245,15 @@ export function AlbumRecommendations() {
                 </ScrollView>
             </View>
 
+            {/* Album player modal */}
             <Portal>
                 {selectedAlbum && (
-                    <AlbumDetailsSheet
-                        album={selectedAlbum}
+                    <AlbumPlayer
+                        visible={true}
                         onClose={handleCloseSheet}
+                        album={selectedAlbum}
+                        currentTrack={currentTrack}
+                        isPlaying={isPlaying}
                     />
                 )}
             </Portal>
@@ -152,6 +261,19 @@ export function AlbumRecommendations() {
     );
 }
 
+/**
+ * Album Recommendations Styles
+ * 
+ * Defines the visual styling for the recommendations section
+ * and album cards. Uses responsive sizing based on screen width.
+ * 
+ * Key style sections:
+ * - Container and layout styles
+ * - Album card and artwork styles
+ * - Glass-morphic overlay styles
+ * - Typography styles
+ * - Loading and error state styles
+ */
 const styles = StyleSheet.create({
     container: {
         height: ALBUM_CARD_WIDTH + 150, // Extra space for title and padding

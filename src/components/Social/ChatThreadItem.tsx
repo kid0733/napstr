@@ -3,11 +3,31 @@ import { colors } from '@/constants/tokens'
 import { MaterialIcons } from '@expo/vector-icons'
 import { Message } from '@/types/chat'
 
+/**
+ * ChatThreadItem Component (Currently Inactive)
+ * 
+ * A component for displaying individual chat threads in the messaging interface.
+ * Currently not in use as the chat functionality is pending implementation.
+ * 
+ * Features (Planned):
+ * - Displays user avatar with fallback icon
+ * - Shows username and last message preview
+ * - Handles song shares with special formatting
+ * - Shows message timestamps in relative format
+ * - Displays unread message count with badge
+ * - Supports press interactions for thread selection
+ */
+
 interface ChatThreadItemProps {
+    /** Username of the chat participant */
     username: string
+    /** Optional URL for the user's avatar */
     avatarUrl?: string
+    /** Most recent message in the thread */
     lastMessage?: Message
+    /** Number of unread messages */
     unreadCount: number
+    /** Callback when thread is pressed */
     onPress: () => void
 }
 
@@ -18,6 +38,10 @@ export function ChatThreadItem({
     unreadCount, 
     onPress 
 }: ChatThreadItemProps) {
+    /**
+     * Formats the last message preview based on message type
+     * Handles both text messages and song shares
+     */
     const getLastMessagePreview = () => {
         if (!lastMessage) return ''
         if (lastMessage.type === 'song') {
@@ -26,6 +50,10 @@ export function ChatThreadItem({
         return lastMessage.content
     }
 
+    /**
+     * Converts timestamp to relative time format
+     * Returns time in format: now, Xm, Xh, or Xd
+     */
     const getTimeAgo = (timestamp: number) => {
         const now = Date.now()
         const diff = now - timestamp

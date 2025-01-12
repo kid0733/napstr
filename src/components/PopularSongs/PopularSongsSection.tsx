@@ -1,3 +1,15 @@
+/**
+ * PopularSongsSection Component
+ * 
+ * A visually rich section displaying popular songs in a staggered grid layout.
+ * Features:
+ * - Dynamic grid with alternating large and small tiles
+ * - Custom background video with blur effect
+ * - Gradient overlays for text readability
+ * - Responsive sizing based on screen width
+ * - Interactive song tiles with press handling
+ */
+
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, Dimensions } from 'react-native';
 import { Song } from '@/services/api';
@@ -8,6 +20,10 @@ import Svg, { Defs, LinearGradient, Stop, Rect } from 'react-native-svg';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+/**
+ * Renders a gradient overlay for song tiles to improve text readability
+ * Uses SVG to create a smooth transparent-to-black gradient
+ */
 function GradientOverlay() {
     return (
         <View style={StyleSheet.absoluteFill}>
@@ -24,14 +40,20 @@ function GradientOverlay() {
     );
 }
 
+/**
+ * Props for the PopularSongsSection component
+ */
 interface PopularSongsSectionProps {
-    popularSongs: Song[];
-    onSongPress: (song: Song) => void;
-    currentTrack: Song | null;
-    isPlaying: boolean;
-    onTogglePlay: () => Promise<void>;
+    popularSongs: Song[];                    // Array of popular songs to display
+    onSongPress: (song: Song) => void;       // Callback when a song tile is pressed
+    currentTrack: Song | null;               // Currently playing track
+    isPlaying: boolean;                      // Current playback state
+    onTogglePlay: () => Promise<void>;       // Callback to toggle play/pause
 }
 
+/**
+ * Displays a grid of popular songs with staggered layout and visual effects
+ */
 export function PopularSongsSection({ 
     popularSongs, 
     onSongPress
@@ -74,11 +96,18 @@ export function PopularSongsSection({
 }
 
 const styles = StyleSheet.create({
+    /**
+     * Container for the entire popular songs section
+     */
     popularSongsSection: {
         marginBottom: 24,
         margin: 0,
         padding: 0,
     },
+
+    /**
+     * Section title styling
+     */
     sectionTitle: {
         fontSize: 24,
         fontWeight: '600',
@@ -86,6 +115,10 @@ const styles = StyleSheet.create({
         marginBottom: 16,
         paddingHorizontal: 16,
     },
+
+    /**
+     * Container for the grid and background
+     */
     popularSongsContainer: {
         position: 'relative',
         overflow: 'hidden',
@@ -93,25 +126,45 @@ const styles = StyleSheet.create({
         margin: 0,
         padding: 0,
     },
+
+    /**
+     * Grid layout container
+     */
     staggeredGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
         padding: 0,
         margin: 0,
     },
+
+    /**
+     * Standard grid item (1/3 screen width)
+     */
     staggeredItem: {
         width: SCREEN_WIDTH * 0.33,
         height: SCREEN_WIDTH * 0.33,
         overflow: 'hidden',
     },
+
+    /**
+     * Large grid item (2/3 screen width)
+     */
     staggeredItemLarge: {
         width: SCREEN_WIDTH * 0.67,
         height: SCREEN_WIDTH * 0.67,
     },
+
+    /**
+     * Album artwork styling
+     */
     staggeredArt: {
         width: '100%',
         height: '100%',
     },
+
+    /**
+     * Container for song information overlay
+     */
     staggeredInfo: {
         position: 'absolute',
         bottom: 0,
@@ -120,12 +173,20 @@ const styles = StyleSheet.create({
         padding: 8,
         justifyContent: 'flex-end',
     },
+
+    /**
+     * Song title text styling
+     */
     staggeredTitle: {
         fontSize: 14,
         fontWeight: 'bold',
         color: colors.text,
         marginBottom: 2,
     },
+
+    /**
+     * Artist name text styling
+     */
     staggeredArtist: {
         fontSize: 12,
         color: colors.text,

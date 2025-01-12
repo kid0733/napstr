@@ -1,17 +1,39 @@
+/**
+ * A quick navigation component that provides letter-based jumping in a list.
+ * Features:
+ * - Vertical letter index with touch and drag support
+ * - Visual feedback with active letter highlighting
+ * - Floating letter indicator during drag
+ * - Smooth scrolling to selected letter sections
+ * - Handles both alphabetical and custom section headers
+ */
+
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, PanResponder, GestureResponderEvent } from 'react-native';
 import { colors } from '@/constants/tokens';
 import { FlashList } from '@shopify/flash-list';
 
+/** Available letters for the index, including # for numbers */
 const ALPHABET = '#ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
+/**
+ * Props for the AlphabeticalIndex component
+ */
 interface Props {
+    /** Reference to the list component for scrolling */
     listRef: React.RefObject<FlashList<any>>;
+    /** Indices of section headers in the flat data array */
     stickyHeaderIndices: number[];
+    /** Flat data array containing section headers and items */
     data: any[];
+    /** Optional callback when a letter is selected */
     onLetterChange?: (letter: string) => void;
 }
 
+/**
+ * Renders a vertical letter index for quick navigation in a list.
+ * Supports touch and drag gestures for smooth section jumping.
+ */
 export const AlphabeticalIndex: React.FC<Props> = ({ 
     listRef, 
     stickyHeaderIndices, 
@@ -21,6 +43,10 @@ export const AlphabeticalIndex: React.FC<Props> = ({
     const [isDragging, setIsDragging] = useState(false);
     const [currentLetter, setCurrentLetter] = useState('');
 
+    /**
+     * Calculates which letter should be selected based on the touch position.
+     * Uses the container height and letter count to determine the letter index.
+     */
     const findLetterAtPosition = useCallback((y: number) => {
         const containerHeight = ALPHABET.length * 18; // Each letter container is 18px high
         const index = Math.floor((y / containerHeight) * ALPHABET.length);
@@ -28,6 +54,10 @@ export const AlphabeticalIndex: React.FC<Props> = ({
         return letter;
     }, []);
 
+    /**
+     * Finds the closest section header that matches the selected letter.
+     * Handles both alphabetical sections and custom section headers (albums, artists).
+     */
     const findClosestHeader = useCallback((letter: string) => {
         // Find the closest header that starts with this letter
         for (let i = 0; i < stickyHeaderIndices.length; i++) {
@@ -54,6 +84,10 @@ export const AlphabeticalIndex: React.FC<Props> = ({
         return stickyHeaderIndices[stickyHeaderIndices.length - 1];
     }, [data, stickyHeaderIndices]);
 
+    /**
+     * Scrolls the list to the section matching the selected letter.
+     * Updates the current letter state and triggers the change callback.
+     */
     const scrollToLetter = useCallback((letter: string) => {
         if (!listRef.current || !letter) return;
         
@@ -68,6 +102,10 @@ export const AlphabeticalIndex: React.FC<Props> = ({
         }
     }, [findClosestHeader, onLetterChange]);
 
+    /**
+     * Pan responder configuration for handling touch and drag gestures.
+     * Manages the dragging state and letter selection based on touch position.
+     */
     const panResponder = PanResponder.create({
         onStartShouldSetPanResponder: () => true,
         onMoveShouldSetPanResponder: () => true,
@@ -118,7 +156,13 @@ export const AlphabeticalIndex: React.FC<Props> = ({
     );
 };
 
+/**
+ * Styles for the AlphabeticalIndex component.
+ * Includes layout for the letter index bar, individual letters,
+ * and the floating letter indicator during drag.
+ */
 const styles = StyleSheet.create({
+    // Main container with semi-transparent background
     container: {
         position: 'absolute',
         right: 4,
@@ -128,29 +172,34 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0, 0, 0, 0.2)',
         borderRadius: 10,
     },
+    // Container for letter list with even spacing
     lettersContainer: {
         flex: 1,
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingVertical: 8,
     },
+    // Individual letter container with fixed size
     letterContainer: {
         height: 18,
         width: 20,
         justifyContent: 'center',
         alignItems: 'center',
     },
+    // Letter text styling
     letter: {
         fontSize: 12,
         color: colors.greenTertiary,
         fontWeight: '600',
         fontFamily: 'Dosis-SemiBold',
     },
+    // Active letter highlighting
     letterActive: {
         color: colors.greenPrimary,
         fontWeight: '700',
         fontFamily: 'Dosis-Bold',
     },
+    // Floating letter indicator during drag
     letterThumb: {
         position: 'absolute',
         right: 20,
@@ -169,6 +218,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.25,
         shadowRadius: 3.84,
     },
+    // Text in floating letter indicator
     letterThumbText: {
         fontSize: 14,
         color: colors.background,

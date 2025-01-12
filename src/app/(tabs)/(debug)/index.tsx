@@ -1,26 +1,53 @@
+/**
+ * Debug Screen Component
+ * 
+ * Provides system information and debugging tools for the application.
+ * Monitors storage usage, downloaded files, and maintains debug logs.
+ * 
+ * Features:
+ * - Storage space monitoring
+ * - Downloaded files tracking
+ * - Debug log management
+ * - Real-time refresh capability
+ * 
+ * @module Debug
+ */
+
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import * as FileSystem from 'expo-file-system';
 import { colors } from '@/constants/tokens';
 import DownloadManager from '@/services/DownloadManager';
 
+/**
+ * Storage information interface
+ * Tracks device and application storage metrics
+ */
 interface StorageInfo {
-    totalSpace: number;
-    freeSpace: number;
-    songsDirectory: string;
+    totalSpace: number;      // Total device storage capacity
+    freeSpace: number;       // Available device storage
+    songsDirectory: string;  // Path to downloaded songs
     downloadedFiles: Array<{
-        name: string;
-        size: number;
-        exists: boolean;
+        name: string;        // File name
+        size: number;        // File size in bytes
+        exists: boolean;     // File existence status
     }>;
 }
 
+/**
+ * File details interface
+ * Individual file information
+ */
 interface FileDetails {
-    name: string;
-    size: number;
-    exists: boolean;
+    name: string;    // File name
+    size: number;    // File size in bytes
+    exists: boolean; // File existence status
 }
 
+/**
+ * Extended file information interface
+ * Detailed file system information
+ */
 interface FileInfo {
     exists: boolean;
     uri: string;
@@ -30,26 +57,45 @@ interface FileInfo {
     md5?: string;
 }
 
+/**
+ * DebugScreen Component
+ * 
+ * Main debugging interface providing system information and tools.
+ * Handles storage monitoring, file tracking, and debug logging.
+ * 
+ * @returns {JSX.Element} The debug interface
+ */
 export default function DebugScreen() {
+    // State Management
     const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
     const [refreshKey, setRefreshKey] = useState(0);
     const [logs, setLogs] = useState<string>('');
 
+    /**
+     * Initialize component data
+     * Loads storage information and logs on mount and refresh
+     */
     useEffect(() => {
         loadStorageInfo();
         loadLogs();
     }, [refreshKey]);
 
+    /**
+     * Loads and updates storage information
+     * Includes file system checks and download validation
+     */
     const loadStorageInfo = async () => {
         try {
             const downloadManager = DownloadManager.getInstance();
             await downloadManager.appendToLog('Refreshing storage info...');
 
+            // Get device storage metrics
             const [totalSpace, freeSpace] = await Promise.all([
                 FileSystem.getTotalDiskCapacityAsync(),
                 FileSystem.getFreeDiskStorageAsync()
             ]);
 
+            // Check songs directory
             const songsDir = `${FileSystem.documentDirectory}songs/`;
             const dirInfo = await FileSystem.getInfoAsync(songsDir);
             
@@ -65,7 +111,7 @@ export default function DebugScreen() {
                         return {
                             name: fileName,
                             size: fileInfo.size || 0,
-                            exists: fileInfo.exists && isDownloaded // Only count if both file exists and is tracked
+                            exists: fileInfo.exists && isDownloaded // Validate both file existence and tracking
                         };
                     })
                 );
@@ -75,6 +121,7 @@ export default function DebugScreen() {
                 await downloadManager.appendToLog('Songs directory does not exist');
             }
 
+            // Update state with collected information
             setStorageInfo({
                 totalSpace,
                 freeSpace,
@@ -90,12 +137,20 @@ export default function DebugScreen() {
         }
     };
 
+    /**
+     * Loads debug logs from download manager
+     */
     const loadLogs = async () => {
         const downloadManager = DownloadManager.getInstance();
         const logs = await downloadManager.getDownloadLog();
         setLogs(logs);
     };
 
+    /**
+     * Formats byte values into human-readable sizes
+     * @param bytes - Number of bytes to format
+     * @returns Formatted string with appropriate unit
+     */
     const formatBytes = (bytes: number) => {
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         if (bytes === 0) return '0 Byte';
@@ -103,6 +158,7 @@ export default function DebugScreen() {
         return Math.round((bytes / Math.pow(1024, i)) * 100) / 100 + ' ' + sizes[i];
     };
 
+    // Loading state
     if (!storageInfo) {
         return (
             <View style={styles.container}>
@@ -114,6 +170,7 @@ export default function DebugScreen() {
     return (
         <View style={styles.container}>
             <ScrollView style={styles.scrollView}>
+                {/* Action Buttons */}
                 <View style={styles.buttonContainer}>
                     <TouchableOpacity 
                         style={styles.refreshButton}
@@ -133,6 +190,7 @@ export default function DebugScreen() {
                     </TouchableOpacity>
                 </View>
 
+                {/* Storage Information Section */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Storage Information</Text>
                     <Text style={styles.text}>Total Space: {formatBytes(storageInfo.totalSpace)}</Text>
@@ -140,6 +198,7 @@ export default function DebugScreen() {
                     <Text style={styles.text}>Songs Directory: {storageInfo.songsDirectory}</Text>
                 </View>
 
+                {/* Downloaded Files Section */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Downloaded Files ({storageInfo.downloadedFiles.length})</Text>
                     {storageInfo.downloadedFiles.map((file, index) => (
@@ -154,6 +213,7 @@ export default function DebugScreen() {
                     ))}
                 </View>
 
+                {/* Debug Logs Section */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Download Logs</Text>
                     <ScrollView style={styles.logsContainer}>
@@ -165,11 +225,17 @@ export default function DebugScreen() {
     );
 }
 
+/**
+ * Debug Screen Styles
+ * 
+ * Defines the visual styling for the debug interface.
+ * Uses the application's color tokens for consistency.
+ */
 const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: colors.background,
-        paddingBottom: 80,
+        paddingBottom: 80, // Space for player bar
     },
     scrollView: {
         flex: 1,

@@ -1,22 +1,55 @@
+/**
+ * Floating Action Indicator Component
+ * 
+ * A visual indicator component that shows the currently selected action in the FloatingActionBar.
+ * Features smooth animations for position transitions and opacity changes.
+ * 
+ * Features:
+ * - Animated position transitions with spring physics
+ * - Frosted glass effect with blur and overlays
+ * - Dynamic positioning based on bar orientation
+ * - Shared animation values with parent
+ * - Platform-specific visual adjustments
+ */
+
 import React from 'react';
 import { StyleSheet, ViewStyle, ImageBackground, View } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  withTiming, 
+import Animated, {
+  useAnimatedStyle,
   useAnimatedReaction,
+  withTiming,
   interpolate
 } from 'react-native-reanimated';
 
+/**
+ * Props for the FloatingActionIndicator component
+ */
 export interface FloatingActionIndicatorProps {
+  /** Background color when active */
   activeBackgroundColor?: string;
+  /** Height of the indicator */
   height?: number;
+  /** Position of the parent bar */
   position?: 'top' | 'bottom' | 'left' | 'right';
+  /** Currently selected index */
   selectedIndex?: number;
+  /** Width of the indicator */
   width?: number;
+  /** Shared animated value for position tracking */
   animatedIndex: Animated.SharedValue<number>;
+  /** Whether the parent bar is active */
   isActive?: boolean;
 }
 
+/**
+ * FloatingActionIndicator Component
+ * 
+ * Renders an animated indicator that follows the currently selected action
+ * in the FloatingActionBar. Features a frosted glass effect with blur and overlays.
+ * 
+ * @param props - Component properties
+ * @returns {JSX.Element} Animated indicator element with glass effect
+ */
 export const FloatingActionIndicator: React.FC<FloatingActionIndicatorProps> = ({
   height = 44,
   position = 'bottom',
@@ -24,6 +57,7 @@ export const FloatingActionIndicator: React.FC<FloatingActionIndicatorProps> = (
   animatedIndex,
   isActive = true,
 }) => {
+  // Track animation value changes
   useAnimatedReaction(
     () => animatedIndex.value,
     (currentValue, previousValue) => {
@@ -34,6 +68,10 @@ export const FloatingActionIndicator: React.FC<FloatingActionIndicatorProps> = (
     [animatedIndex]
   );
 
+  /**
+   * Animated style for the indicator
+   * Handles position transitions and transforms
+   */
   const animatedStyle = useAnimatedStyle(() => {
     'worklet';
     let translateX = 0;
@@ -75,6 +113,12 @@ export const FloatingActionIndicator: React.FC<FloatingActionIndicatorProps> = (
   );
 };
 
+/**
+ * Styles for the FloatingActionIndicator
+ * 
+ * Defines the visual appearance of the indicator element.
+ * Includes styles for the frosted glass effect and overlays.
+ */
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',

@@ -38,7 +38,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
     // Update progress with smooth animation
     React.useEffect(() => {
         if (!isSeeking && barWidth > 0) {
-            console.log('Progress update:', { progress, currentTime, duration, barWidth });
+            // console.log('Progress update:', { progress, currentTime, duration, barWidth });
             const newPosition = progress * barWidth;
             translateX.value = withTiming(newPosition, {
                 duration: 100,  // Faster updates for smoother movement
@@ -110,9 +110,6 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
                     <View style={styles.progressBackground}>
                         <Animated.View style={[styles.progressFill, progressStyle]} />
                     </View>
-                    <PanGestureHandler onGestureEvent={gestureHandler}>
-                        <Animated.View style={[styles.dial, dialStyle]} />
-                    </PanGestureHandler>
                 </View>
             </View>
             <View style={styles.timeContainer}>
@@ -126,11 +123,12 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
 const styles = StyleSheet.create({
     container: {
         width: '100%',
-        alignItems: 'center',
-        paddingHorizontal: 16,
+        height: 40,
+        justifyContent: 'center',
+        backgroundColor: 'transparent',
     },
     barContainer: {
-        width: '90%',
+        width: '100%',
         alignItems: 'center',
     },
     timeContainer: {
@@ -138,46 +136,28 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         paddingHorizontal: 0,
-        marginTop: 4,
+        marginTop: 8,
     },
     timeText: {
-        color: colors.greenTertiary,
+        color: 'rgba(255, 255, 255, 0.7)',
         fontSize: 12,
     },
     progressContainer: {
         width: '100%',
         height: 30,
         justifyContent: 'center',
+        backgroundColor: 'transparent',
     },
     progressBackground: {
         width: '100%',
-        height: 4,
-        backgroundColor: colors.greenTertiary,
-        opacity: 0.3,
-        borderRadius: 2,
+        height: 3,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        borderRadius: 1.5,
         overflow: 'hidden',
     },
     progressFill: {
         height: '100%',
-        backgroundColor: colors.greenPrimary,
-        borderRadius: 2,
-    },
-    dial: {
-        position: 'absolute',
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        backgroundColor: colors.greenPrimary,
-        ...Platform.select({
-            ios: {
-                shadowColor: '#000',
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.25,
-                shadowRadius: 4,
-            },
-            android: {
-                elevation: 4,
-            },
-        }),
+        backgroundColor: 'rgba(255, 255, 255, 0.9)',
+        borderRadius: 1.5,
     }
 }); 

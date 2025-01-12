@@ -1,3 +1,36 @@
+/**
+ * A comprehensive song item component with rich interaction features.
+ * 
+ * Key Features:
+ * - Album artwork display with consistent sizing
+ * - Title and artist information with text truncation
+ * - Play/pause state indication for current song
+ * - Like/unlike functionality with heart animation
+ * - Download management with status indication
+ * - Options menu access for additional actions
+ * - Haptic feedback on interactions
+ * - Animated state transitions
+ * 
+ * Visual States:
+ * - Normal: Semi-transparent background
+ * - Current Song: Highlighted background with accent color
+ * - Downloading: Shows download progress indicator
+ * - Downloaded: Shows checkmark indicator
+ * - Liked: Shows filled heart icon
+ * 
+ * Interactions:
+ * - Tap: Plays/pauses song
+ * - Like: Animates heart with haptic
+ * - Download: Manages song download
+ * - Options: Opens action sheet
+ * 
+ * Performance:
+ * - Memoized component to prevent unnecessary re-renders
+ * - Memoized callbacks for event handlers
+ * - Memoized styles for dynamic states
+ * - Separate options modal component
+ */
+
 import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, Image, StyleSheet, Pressable, TouchableOpacity } from 'react-native';
 import { colors } from '@/constants/tokens';
@@ -15,17 +48,30 @@ import Animated, {
     withSequence
 } from 'react-native-reanimated';
 
+/**
+ * Props for the SongItem component
+ */
 interface SongItemProps {
+    /** Song data to display */
     song: Song;
+    /** Optional next song in the queue */
     nextSong?: Song;
+    /** Complete array of songs for queue management */
     allSongs: Song[];
+    /** Callback when song is selected for playback */
     onPress: (song: Song, queue: Song[]) => Promise<void>;
+    /** Callback to toggle play/pause state */
     onTogglePlay: () => Promise<void>;
+    /** Whether this song is currently selected/playing */
     isCurrentSong: boolean;
+    /** Whether playback is currently active */
     isPlaying: boolean;
 }
 
-// Separate the options modal to prevent re-renders of the main item
+/**
+ * Modal component for song options menu.
+ * Memoized to prevent unnecessary re-renders of the main item.
+ */
 const SongOptionsModal = React.memo(({ visible, onClose, song }: { 
     visible: boolean; 
     onClose: () => void; 
@@ -38,7 +84,15 @@ const SongOptionsModal = React.memo(({ visible, onClose, song }: {
     />
 ));
 
-// Convert to a pure component for better performance
+/**
+ * Main song item component with rich interactions and state management.
+ * Features:
+ * - Download management with retry logic
+ * - Like/unlike with animated feedback
+ * - Options menu for additional actions
+ * - Playback control integration
+ * - Haptic feedback on interactions
+ */
 export const SongItem = React.memo(function SongItem({ 
     song, 
     allSongs,
@@ -47,6 +101,7 @@ export const SongItem = React.memo(function SongItem({
     isCurrentSong,
     isPlaying
 }: SongItemProps) {
+    // State management
     const [showOptions, setShowOptions] = useState(false);
     const [isDownloaded, setIsDownloaded] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
@@ -54,7 +109,7 @@ export const SongItem = React.memo(function SongItem({
     const [isLiking, setIsLiking] = useState(false);
     const likeScale = useSharedValue(1);
 
-    // Check download status on mount and when song changes
+    // Download status management
     React.useEffect(() => {
         let mounted = true;
         let retryCount = 0;
@@ -71,21 +126,18 @@ export const SongItem = React.memo(function SongItem({
                 }
             } catch (error) {
                 console.error('Error checking download status:', error);
-                // Retry a few times if it fails
                 if (retryCount < maxRetries && mounted) {
                     retryCount++;
-                    setTimeout(check, 1000); // Wait 1 second before retrying
+                    setTimeout(check, 1000);
                 }
             }
         };
 
         check();
-        
-        return () => {
-            mounted = false;
-        };
+        return () => { mounted = false; };
     }, [song.track_id]);
 
+    // Handler functions with memoization
     const handleDownload = async () => {
         if (isDownloaded || isDownloading) return;
         
@@ -100,6 +152,8 @@ export const SongItem = React.memo(function SongItem({
 
     const handlePress = useCallback(async () => {
         try {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            
             if (isCurrentSong) {
                 await onTogglePlay();
             } else {
@@ -112,15 +166,26 @@ export const SongItem = React.memo(function SongItem({
         }
     }, [isCurrentSong, onTogglePlay, song, allSongs, onPress]);
 
+    /**
+     * Shows the options modal for additional song actions.
+     * Prevents event propagation to avoid triggering parent handlers.
+     */
     const handleOptionsPress = useCallback((e: any) => {
         e.stopPropagation();
         setShowOptions(true);
     }, []);
 
+    /**
+     * Closes the options modal.
+     */
     const handleOptionsClose = useCallback(() => {
         setShowOptions(false);
     }, []);
 
+    /**
+     * Handles like/unlike action with animation and haptic feedback.
+     * Prevents multiple simultaneous like operations.
+     */
     const handleLikePress = useCallback(async (e: any) => {
         e.stopPropagation();
         if (isLiking) return;
@@ -145,11 +210,12 @@ export const SongItem = React.memo(function SongItem({
         }
     }, [song.track_id, isLiking, toggleLike, likeScale]);
 
+    // Animated style for like button scaling
     const likeAnimatedStyle = useAnimatedStyle(() => ({
         transform: [{ scale: likeScale.value }]
     }));
 
-    // Memoize styles to prevent recreation
+    // Memoized styles to prevent recreation
     const containerStyle = useMemo(() => [
         styles.container,
         isCurrentSong && styles.currentSongContainer
@@ -239,55 +305,72 @@ export const SongItem = React.memo(function SongItem({
     );
 });
 
+/**
+ * Styles for the SongItem component.
+ * Includes layout for the song container, content areas,
+ * interactive elements, and visual states.
+ */
 const styles = StyleSheet.create({
+    // Main container with background and rounded corners
     container: {
         borderRadius: 12,
         marginBottom: 8,
         overflow: 'hidden',
         backgroundColor: 'rgba(45, 54, 47, 0.38)',
     },
+    // Horizontal layout for song content
     content: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 12,
         paddingHorizontal: 16,
     },
+    // Special styling for currently playing song
     currentSongContainer: {
         backgroundColor: 'rgba(25, 70, 25, 0.15)',
     },
+    // Album artwork dimensions and styling
     albumArt: {
         width: 50,
         height: 40,
         borderRadius: 8,
     },
+    // Song info container with flex growth
     info: {
         flex: 1,
         marginLeft: 16,
     },
+    // Song title text styling
     title: {
         fontSize: 13,
         fontWeight: '600',
         color: colors.text,
         marginBottom: 4,
     },
+    // Highlighted text for current song
     currentSongText: {
         color: colors.greenPrimary,
     },
+    // Artist name text styling
     artist: {
         fontSize: 10,
         color: colors.greenTertiary,
     },
+    // Container for play/pause icon
     playStateContainer: {
         marginRight: 16,
     },
+    // Options button styling
     optionsButton: {
         padding: 8,
         justifyContent: 'center',
         alignItems: 'center',
     },
+    // Download button styling
     downloadButton: {
         padding: 4,
     },
+    // Like button styling
     likeButton: {
         padding: 8,
         justifyContent: 'center',

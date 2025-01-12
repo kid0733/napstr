@@ -1,3 +1,19 @@
+/**
+ * Social Screen Component
+ * 
+ * Primary social interface showing online friends and chat functionality.
+ * Note: This component is currently in the 'artists' folder but should be moved to 'social'
+ * as it handles social/chat features rather than artist browsing.
+ * 
+ * Features:
+ * - Online friends list with currently playing songs
+ * - Chat threads and messaging
+ * - Real-time status updates
+ * - Music sharing capabilities
+ * 
+ * @module Social
+ */
+
 import { View, StyleSheet } from 'react-native'
 import { colors } from '@/constants/tokens'
 import { FlashList } from '@shopify/flash-list'
@@ -6,7 +22,7 @@ import { ChatThreadItem } from '@/components/Social/ChatThreadItem'
 import { useRouter } from 'expo-router'
 import { ChatUser, Message, ChatThread } from '@/types/chat'
 
-// Mock data for testing
+// Mock data for testing online friends with their currently playing songs
 const MOCK_FRIENDS: ChatUser[] = [
     { 
         id: '1', 
@@ -96,19 +112,46 @@ const MOCK_CHATS: ChatThread[] = [
     }
 ]
 
+/**
+ * SocialScreen Component
+ * 
+ * Main social interface component that manages:
+ * - Online friends display
+ * - Chat thread listing
+ * - Navigation to profiles and chats
+ * 
+ * Layout:
+ * - Horizontal scrolling friends list at top
+ * - Vertical scrolling chat threads below
+ * 
+ * @returns {JSX.Element} The rendered social screen
+ */
 export default function SocialScreen() {
     const router = useRouter()
 
+    /**
+     * Handles friend profile navigation
+     * @param friendId - ID of the friend to view
+     */
     const handleFriendPress = (friendId: string) => {
         // TODO: Navigate to friend profile or start chat
         console.log('Friend pressed:', friendId)
     }
 
+    /**
+     * Handles chat thread navigation
+     * @param chatId - ID of the chat to open
+     */
     const handleChatPress = (chatId: string) => {
         // TODO: Navigate to chat screen
         console.log('Chat pressed:', chatId)
     }
 
+    /**
+     * Gets the display username for a chat thread
+     * @param thread - The chat thread to get username for
+     * @returns The username to display
+     */
     const getThreadUsername = (thread: ChatThread) => {
         // In a real app, we'd look up the other participant's username
         return thread.participants.find(p => p !== 'user1') || 'Unknown'
@@ -116,6 +159,7 @@ export default function SocialScreen() {
 
     return (
         <View style={styles.container}>
+            {/* Online Friends Section */}
             <View style={styles.onlineFriendsSection}>
                 <FlashList
                     data={MOCK_FRIENDS}
@@ -134,6 +178,7 @@ export default function SocialScreen() {
                 />
             </View>
             
+            {/* Chat Threads Section */}
             <View style={styles.chatsSection}>
                 <FlashList
                     data={MOCK_CHATS}
@@ -153,23 +198,34 @@ export default function SocialScreen() {
     )
 }
 
+/**
+ * Social Screen Styles
+ * 
+ * Defines the visual styling for the social interface
+ * Uses the application's color tokens for consistency
+ */
 const styles = StyleSheet.create({
+    // Main container
     container: {
         flex: 1,
         backgroundColor: colors.background,
     },
+    // Section for online friends list
     onlineFriendsSection: {
         height: 140,
         paddingVertical: 16,
         paddingHorizontal: 16,
     },
+    // Content styling for friends list
     onlineFriendsListContent: {
         backgroundColor: colors.background,
     },
+    // Section for chat threads
     chatsSection: {
         flex: 1,
         paddingTop: 24,
     },
+    // Content styling for chat list
     chatListContent: {
         backgroundColor: colors.background,
     },

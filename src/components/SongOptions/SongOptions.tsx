@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Dimensions, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import React, { useEffect, useRef, useState, useMemo, useCallback, memo } from 'react';
+import { View, Text, StyleSheet, Modal, Pressable, ScrollView, Dimensions, NativeScrollEvent, NativeSyntheticEvent, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
 import { Blur } from '@/components/Blur/Blur';
@@ -17,19 +17,45 @@ import { SongStorage } from '@/services/storage/SongStorage';
 import { useLikes } from '@/contexts/LikesContext';
 import * as Haptics from 'expo-haptics';
 
+/**
+ * SongOptions Component
+ * 
+ * A bottom sheet modal component that displays various actions and options for a song.
+ * Features a draggable sheet with spring animations, blur effects, and categorized options.
+ * 
+ * Features:
+ * - Interactive bottom sheet with gesture controls
+ * - Blur backdrop with animated opacity
+ * - Quick actions for common operations (like, play next, add to playlist)
+ * - Categorized options (Discover, Playlist, Social, Extras)
+ * - Haptic feedback on interactions
+ * - Smooth spring animations for sheet movement
+ * - Scroll handling with drag-to-dismiss
+ */
+
+// Core dimensions and thresholds
 const SCREEN_HEIGHT = Dimensions.get('window').height;
-const SLIDE_THRESHOLD = 50;
+const SLIDE_THRESHOLD = 50;  // Distance required to trigger sheet dismissal
 
 interface SongOptionsProps {
+    /** Controls visibility of the modal */
     visible: boolean;
+    /** Callback when modal should close */
     onClose: () => void;
+    /** Song data to display options for */
     song: Song;
+    /** Optional callback to add song to queue */
+    onAddUpNext?: () => Promise<void>;
 }
 
 type GestureContext = {
-    startY: number;
+    startY: number;  // Initial Y position for gesture handling
 };
 
+/**
+ * Option categories with their respective actions
+ * Each category contains a title and array of option items
+ */
 const SONG_OPTIONS = {
     QUICK_ACTIONS: {
         title: 'Quick Actions',
@@ -77,7 +103,42 @@ const SONG_OPTIONS = {
     }
 };
 
-export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose, song }) => {
+/**
+ * Quick action options that appear at the top of the sheet
+ * These are the most commonly used actions
+ */
+const quickActions = {
+    title: 'Quick Actions',
+    items: [
+        {
+            id: 'like',
+            title: 'Like',
+            icon: 'heart-outline',
+            activeIcon: 'heart'
+        },
+        {
+            id: 'addUpNext',
+            title: 'Play Next',
+            icon: 'play-skip-forward-outline'
+        },
+        {
+            id: 'addToPlaylist',
+            title: 'Add to Playlist',
+            icon: 'add-circle-outline'
+        }
+    ]
+};
+
+/**
+ * Memoized component that renders a bottom sheet with song options
+ * Handles gestures, animations, and option selection
+ */
+export const SongOptions = memo(function SongOptions({ 
+    visible, 
+    onClose, 
+    song,
+    onAddUpNext
+}: SongOptionsProps) {
     const translateY = useSharedValue(0);
     const scrollRef = useRef<ScrollView>(null);
     const isScrolledToTop = useSharedValue(true);
@@ -86,16 +147,26 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose, song
     const { isLiked, toggleLike } = useLikes();
     const [isLiking, setIsLiking] = useState(false);
 
+    /**
+     * Reset sheet position when visibility changes
+     */
     useEffect(() => {
         if (visible) {
             translateY.value = 0;
         }
     }, [visible]);
 
+    /**
+     * Store initial touch position for drag handling
+     */
     const handleTouchStart = (event: any) => {
         touchStartY.current = event.nativeEvent.pageY;
     };
 
+    /**
+     * Handle manual touch movement for sheet dismissal
+     * Closes sheet if dragged down while at top of scroll
+     */
     const handleTouchMove = (event: any) => {
         const currentY = event.nativeEvent.pageY;
         const deltaY = currentY - touchStartY.current;
@@ -105,11 +176,18 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose, song
         }
     };
 
+    /**
+     * Track scroll position to enable/disable sheet drag
+     */
     const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const offsetY = event.nativeEvent.contentOffset.y;
         isScrolledToTop.value = offsetY <= 0;
     };
 
+    /**
+     * Gesture handler for sheet movement
+     * Enables drag-to-dismiss with spring animations
+     */
     const panGestureEvent = useAnimatedGestureHandler<PanGestureHandlerGestureEvent, GestureContext>({
         onStart: (_, context) => {
             context.startY = translateY.value;
@@ -129,12 +207,20 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose, song
         },
     });
 
+    /**
+     * Animated style for the sheet movement
+     * Translates the sheet vertically based on gesture
+     */
     const animatedStyle = useAnimatedStyle(() => {
         return {
             transform: [{ translateY: translateY.value }],
         };
     });
 
+    /**
+     * Animated style for the backdrop
+     * Fades opacity based on sheet position
+     */
     const animatedBackdropStyle = useAnimatedStyle(() => {
         const opacity = translateY.value > 0 ? 0 : 0.8;
         return {
@@ -142,43 +228,61 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose, song
         };
     });
 
-    const handleOptionPress = async (optionId: string) => {
-        if (optionId === 'download') {
-            try {
-                const streamData = await api.songs.getStreamUrl(song.track_id);
-                await songStorage.downloadSong(song.track_id, streamData);
-                // TODO: Show success toast/notification
-            } catch (error) {
-                console.error('Failed to download song:', error);
-                // TODO: Show error toast/notification
+    /**
+     * Handle option selection with haptic feedback
+     * Manages different actions based on the selected option:
+     * - Like/unlike song
+     * - Add to queue
+     * - Add to playlist (with modal)
+     */
+    const handleOptionPress = useCallback(async (optionId: string) => {
+        try {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            
+            switch (optionId) {
+                case 'like':
+                    setIsLiking(true);
+                    await toggleLike(song.track_id);
+                    break;
+                    
+                case 'addUpNext':
+                    if (onAddUpNext) {
+                        await onAddUpNext();
+                    }
+                    break;
+                    
+                case 'addToPlaylist':
+                    Alert.alert(
+                        'Add to Playlist',
+                        'Choose a playlist to add this song to',
+                        [
+                            {
+                                text: 'New Playlist',
+                                onPress: () => {
+                                    Alert.alert(
+                                        'Coming Soon',
+                                        'This feature will be available soon!',
+                                        [{ text: 'OK' }],
+                                        { cancelable: true }
+                                    );
+                                },
+                            },
+                            {
+                                text: 'Cancel',
+                                style: 'cancel',
+                            },
+                        ],
+                        { cancelable: true }
+                    );
+                    break;
             }
-        } else if (optionId === 'like') {
-            try {
-                setIsLiking(true);
-                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                await toggleLike(song.track_id);
-            } catch (error) {
-                console.error('Failed to toggle like:', error);
-            } finally {
-                setIsLiking(false);
-            }
+        } catch (error) {
+            console.error('Error handling option press:', error);
+        } finally {
+            setIsLiking(false);
+            onClose();
         }
-        onClose();
-    };
-
-    const quickActions = useMemo(() => ({
-        title: 'Quick Actions',
-        items: [
-            { id: 'add_to_queue', title: 'Play Next', icon: 'play-skip-forward' },
-            { 
-                id: 'like', 
-                title: isLiked(song.track_id) ? 'Unlike Song' : 'Like Song', 
-                icon: isLiked(song.track_id) ? 'heart' : 'heart-outline' 
-            },
-            { id: 'share', title: 'Share', icon: 'share' },
-            { id: 'karaoke', title: 'Start Karaoke Mode', icon: 'mic' },
-        ]
-    }), [song.track_id, isLiked]);
+    }, [song.track_id, toggleLike, onAddUpNext, onClose]);
 
     return (
         <Modal
@@ -270,16 +374,30 @@ export const SongOptions: React.FC<SongOptionsProps> = ({ visible, onClose, song
             </View>
         </Modal>
     );
-};
+});
 
 const styles = StyleSheet.create({
+    /**
+     * Main container for the modal
+     * Takes up full screen with bottom alignment
+     */
     container: {
         flex: 1,
         justifyContent: 'flex-end',
     },
+
+    /**
+     * Semi-transparent backdrop
+     * Covers entire screen behind sheet
+     */
     backdrop: {
         ...StyleSheet.absoluteFillObject,
     },
+
+    /**
+     * Bottom sheet container
+     * Includes rounded corners and blur background
+     */
     sheet: {
         borderTopLeftRadius: 12,
         borderTopRightRadius: 12,
@@ -287,6 +405,10 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(18, 18, 18, 0.98)',
         maxHeight: '70%',
     },
+
+    /**
+     * Drag handle area at top of sheet
+     */
     gestureArea: {
         height: 40,
         width: '100%',
@@ -294,12 +416,17 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         backgroundColor: 'transparent',
     },
+
+    /**
+     * Visual drag handle indicator
+     */
     handle: {
         width: 36,
         height: 4,
         backgroundColor: 'rgba(255, 255, 255, 0.3)',
         borderRadius: 2,
     },
+
     scrollView: {
         maxHeight: '100%',
     },

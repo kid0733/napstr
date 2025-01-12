@@ -11,25 +11,67 @@ import * as Haptics from 'expo-haptics';
 import { usePlayer } from '@/contexts/PlayerContext';
 import { useMaximizedPlayer } from '@/contexts/MaximizedPlayerContext';
 
+/**
+ * NowPlayingBar Component
+ * 
+ * A persistent mini-player bar that displays at the bottom of the screen.
+ * 
+ * Component Structure:
+ * - FloatingOptions (Share menu)
+ * - Main Container
+ *   - Background with grain texture and blur
+ *   - Additional Controls Section
+ *     - Shuffle button
+ *     - Repeat button
+ *     - Like button
+ *     - Add to playlist button
+ *     - Share button
+ *   - Main Content Section
+ *     - Song Info
+ *       - Album artwork
+ *       - Title
+ *       - Artist
+ *     - Playback Controls
+ *       - Previous
+ *       - Play/Pause
+ *       - Next
+ * 
+ * Features:
+ * - Responsive layout with screen-width-based sizing
+ * - Animated background opacity changes
+ * - Haptic feedback on all interactions
+ * - Expandable to full player view
+ * - Share functionality with friend selection
+ * - Playback controls with visual feedback
+ */
+
 interface NowPlayingBarProps {
-    onPress?: () => void;
+    onPress?: () => void;  // Optional callback when bar is pressed
 }
 
+/**
+ * Type definitions for icon names to ensure type safety
+ */
 type IoniconsName = React.ComponentProps<typeof Ionicons>['name'];
 type MaterialIconsName = React.ComponentProps<typeof MaterialIcons>['name'];
 
+/**
+ * Interface for floating option items in the share menu
+ */
 interface FloatingOption {
-    icon: IoniconsName;
-    onPress: () => void;
-    color: string;
-    isActive?: boolean;
-    name: string;
+    icon: IoniconsName;     // Icon to display
+    onPress: () => void;    // Callback when option is pressed
+    color: string;          // Icon color
+    isActive?: boolean;     // Optional active state
+    name: string;           // Display name
 }
 
+// Screen dimensions for responsive layout
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BAR_WIDTH = SCREEN_WIDTH * 0.9;
 const HORIZONTAL_MARGIN = (SCREEN_WIDTH - BAR_WIDTH) / 2;
 
+// Default song state when nothing is playing
 const DEFAULT_SONG = {
     title: 'No song playing',
     artists: ['Select a song to play'],
@@ -65,18 +107,28 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
 
     const displaySong = currentSong || DEFAULT_SONG;
 
+    /**
+     * Handles user interaction with the bar, managing state transitions
+     * and navigation to the maximized player
+     */
     const handleBarPress = () => {
         console.log('=== NowPlayingBar Press Debug ===');
         console.log('Bar pressed at:', new Date().toISOString());
         console.log('Current state:', {
             currentSong: currentSong?.title,
-            showMaximizedPlayer: true,
+            showMaximizedPlayer,
             showOptions
         });
         
         if (showOptions) {
             console.log('Closing options menu');
             setShowOptions(false);
+            return;
+        }
+
+        // Don't open if already open
+        if (showMaximizedPlayer) {
+            console.log('Maximized player already open');
             return;
         }
         
@@ -89,6 +141,9 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         setShowMaximizedPlayer(false);
     };
 
+    /**
+     * Handles the favorite action with haptic feedback
+     */
     const handleFavorite = async () => {
         try {
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -99,6 +154,9 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         }
     };
 
+    /**
+     * Handles play/pause action with haptic feedback
+     */
     const handlePlayPause = async () => {
         if (!currentSong) return;
         try {
@@ -110,6 +168,9 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         }
     };
 
+    /**
+     * Handles previous track action with haptic feedback
+     */
     const handlePrevious = async () => {
         if (!currentSong) return;
         try {
@@ -121,6 +182,9 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         }
     };
 
+    /**
+     * Handles next track action with haptic feedback
+     */
     const handleNext = async () => {
         if (!currentSong) return;
         try {
@@ -132,6 +196,9 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         }
     };
 
+    /**
+     * Handles shuffle toggle with haptic feedback
+     */
     const handleShuffle = async () => {
         try {
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -142,6 +209,9 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         }
     };
 
+    /**
+     * Handles repeat mode toggle with haptic feedback
+     */
     const handleRepeat = async () => {
         try {
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -152,6 +222,10 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         }
     };
 
+    /**
+     * Handles add to playlist action with haptic feedback
+     * TODO: Implement playlist selection modal
+     */
     const handleAddToPlaylist = async () => {
         try {
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -162,6 +236,9 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
         }
     };
 
+    /**
+     * Handles share action, showing floating options menu
+     */
     const handleSendMessage = async () => {
         try {
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -382,6 +459,9 @@ export const NowPlayingBar: React.FC<NowPlayingBarProps> = ({ onPress }) => {
 };
 
 const styles = StyleSheet.create({
+    /**
+     * Container for the entire bar, positioned at the bottom of the screen
+     */
     container: {
         position: 'absolute',
         bottom: 26,
@@ -395,11 +475,17 @@ const styles = StyleSheet.create({
         zIndex: 999,
         elevation: 999,
     },
+    /**
+     * Pressable area for the entire bar
+     */
     pressableContainer: {
         flex: 1,
         width: '100%',
         height: '100%',
     },
+    /**
+     * Styles for the background image and overlay effects
+     */
     backgroundImage: {
         flex: 1,
         width: '100%',

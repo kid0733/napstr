@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { SectionList, StyleSheet, Text, View } from 'react-native';
 import { SongItem } from './SongItem';
 import { Song } from '@/services/api';
 import { colors } from '@/constants/tokens';
+import { usePlayer } from '@/contexts/PlayerContext';
 
 interface AlphabeticalSongsListProps {
     songs: Song[];
@@ -26,6 +27,8 @@ export const AlphabeticalSongsList: React.FC<AlphabeticalSongsListProps> = ({
     onRefresh,
     refreshing,
 }) => {
+    const { currentSong, isPlaying, playSong, playPause } = usePlayer();
+
     const sections = useMemo(() => {
         // Sort songs by title
         const sortedSongs = [...songs].sort((a, b) => 
@@ -63,6 +66,28 @@ export const AlphabeticalSongsList: React.FC<AlphabeticalSongsListProps> = ({
         </View>
     );
 
+    /**
+     * Handles song selection and starts playback
+     */
+    const handlePlaySong = useCallback(async (song: Song, queue: Song[]) => {
+        await playSong(song, queue);
+    }, [playSong]);
+
+    /**
+     * Toggles play/pause state of the current song
+     */
+    const handleTogglePlay = useCallback(async () => {
+        await playPause();
+    }, [playPause]);
+
+    /**
+     * Checks if a song is currently playing
+     */
+    const isCurrentSongMemo = useCallback((song: Song) => 
+        currentSong?.track_id === song.track_id, 
+        [currentSong?.track_id]
+    );
+
     return (
         <View style={styles.container}>
             <SectionList
@@ -71,6 +96,10 @@ export const AlphabeticalSongsList: React.FC<AlphabeticalSongsListProps> = ({
                     <SongItem 
                         song={item}
                         allSongs={section.data}
+                        onPress={handlePlaySong}
+                        onTogglePlay={handleTogglePlay}
+                        isCurrentSong={isCurrentSongMemo(item)}
+                        isPlaying={isPlaying}
                     />
                 )}
                 renderSectionHeader={renderSectionHeader}

@@ -1,3 +1,21 @@
+/**
+ * Floating Action Bar Component
+ * 
+ * A customizable navigation bar component that provides animated interactions,
+ * automatic inactivity handling, and haptic feedback. Features a floating
+ * design with smooth transitions and background effects.
+ * 
+ * Features:
+ * - Animated selection indicator
+ * - Auto-hide on inactivity
+ * - Haptic feedback on interactions
+ * - Multi-directional support (top/bottom/left/right)
+ * - Background animation effects
+ * - Platform-specific optimizations
+ * 
+ * @module Components/FloatingActionBar
+ */
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { StyleSheet, View, ViewStyle, StyleProp, ImageBackground, Pressable, Dimensions, Platform } from 'react-native';
 import Animated, { 
@@ -13,23 +31,46 @@ import * as Haptics from 'expo-haptics';
 import { FloatingActionButton, FloatingActionButtonProps } from './FloatingActionButton';
 import { FloatingActionIndicator } from './FloatingActionIndicator';
 
+/**
+ * Props for individual action bar items
+ * Extends button props but omits interaction properties
+ */
 export interface FloatingActionBarItem extends Omit<FloatingActionButtonProps, 'onPress' | 'width' | 'height'> {
+  /** Background color when item is active */
   activeBackgroundColor?: string;
 }
 
+/**
+ * Props for the FloatingActionBar component
+ */
 export interface FloatingActionBarProps {
+  /** Array of items to display in the bar */
   items: FloatingActionBarItem[];
+  /** Distance from the specified position edge */
   offset?: number;
+  /** Callback when an item is pressed */
   onPress?: (index: number) => void;
+  /** Position of the bar on screen */
   position?: 'top' | 'bottom' | 'left' | 'right';
+  /** Currently selected item index */
   selectedIndex?: number;
+  /** Additional style properties */
   style?: StyleProp<ViewStyle>;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const NAV_WIDTH = SCREEN_WIDTH * 0.9; // 90% of screen width
-const HORIZONTAL_MARGIN = (SCREEN_WIDTH - NAV_WIDTH) / 2;
+// const HORIZONTAL_MARGIN = (SCREEN_WIDTH - NAV_WIDTH) / 2;
 
+/**
+ * FloatingActionBar Component
+ * 
+ * Main navigation component that provides an animated interface with
+ * automatic inactivity handling and smooth transitions.
+ * 
+ * @param props - Component properties
+ * @returns {JSX.Element} Floating action bar with animated interactions
+ */
 export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
   items = [],
   offset = 5,
@@ -38,18 +79,23 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
   selectedIndex = 0,
   style,
 }) => {
+  // State management
   const [currentIndex, setCurrentIndex] = useState(selectedIndex);
   const [isActive, setIsActive] = useState(true);
   
-  // Shared values for animation
+  // Animation shared values
   const animatedIndex = useSharedValue(currentIndex);
   const backgroundOpacity = useSharedValue(1);
   const bgOffsetX = useSharedValue(0);
   const bgOffsetY = useSharedValue(0);
   
-  // Timer ref to prevent memory leaks
+  // Timer for inactivity tracking
   const timeoutRef = React.useRef<NodeJS.Timeout>();
 
+  /**
+   * Starts the inactivity timer
+   * After 5 seconds, fades out and starts background animations
+   */
   const startInactiveTimer = useCallback(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
@@ -58,7 +104,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
       setIsActive(false);
       backgroundOpacity.value = withTiming(0, { duration: 300 });
       
-      // Start continuous background movement with much slower timing
+      // Start continuous background movement
       bgOffsetX.value = withRepeat(
         withSequence(
           withTiming(-10, { duration: 8000 }),
@@ -79,6 +125,10 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
     }, 5000);
   }, []);
 
+  /**
+   * Handles bar activation on press
+   * Provides haptic feedback and resets animations
+   */
   const handleActivation = useCallback(async () => {
     if (Platform.OS === 'ios') {
       try {
@@ -91,7 +141,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
     setIsActive(true);
     backgroundOpacity.value = withTiming(1, { duration: 300 });
     
-    // Stop background movement
+    // Reset background animations
     cancelAnimation(bgOffsetX);
     cancelAnimation(bgOffsetY);
     bgOffsetX.value = withTiming(0, { duration: 300 });
@@ -100,6 +150,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
     startInactiveTimer();
   }, []);
 
+  // Setup and cleanup effects
   useEffect(() => {
     startInactiveTimer();
     return () => {
@@ -111,42 +162,39 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
     };
   }, []);
 
+  // Update animated index when selection changes
   useEffect(() => {
     animatedIndex.value = currentIndex;
   }, [currentIndex, animatedIndex]);
 
+  // Get size based on position
   const size = getSize(position);
 
-  const animatedStyle = useAnimatedStyle(() => {
-    return {
-      alignItems: 'center',
-      justifyContent: 'center'
-    };
-  });
+  // Animated styles
+  const animatedStyle = useAnimatedStyle(() => ({
+    alignItems: 'center',
+    justifyContent: 'center'
+  }));
 
-  const backgroundStyle = useAnimatedStyle(() => {
-    return {
-      opacity: 1,
-      backgroundColor: 'transparent',
-      borderRadius: 35,
-      overflow: 'hidden',
-      borderWidth: 0,
-    };
-  });
+  const backgroundStyle = useAnimatedStyle(() => ({
+    opacity: 1,
+    backgroundColor: 'transparent',
+    borderRadius: 35,
+    overflow: 'hidden',
+    borderWidth: 0,
+  }));
 
-  const backgroundImageStyle = useAnimatedStyle(() => {
-    return {
-      opacity: 0,
-      transform: [
-        { translateX: bgOffsetX.value },
-        { translateY: bgOffsetY.value },
-        { scale: 1.2 }
-      ],
-      width: '100%',
-      height: '100%',
-      position: 'absolute',
-    };
-  });
+  const backgroundImageStyle = useAnimatedStyle(() => ({
+    opacity: 0,
+    transform: [
+      { translateX: bgOffsetX.value },
+      { translateY: bgOffsetY.value },
+      { scale: 1.2 }
+    ],
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
+  }));
 
   return (
     <Pressable 
@@ -171,7 +219,7 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
                 {...size}
                 key={index}
                 onPress={async () => {
-                  if (index === currentIndex) return; // Don't do anything if already selected
+                  if (index === currentIndex) return;
                   
                   if (Platform.OS === 'ios') {
                     try {
@@ -196,19 +244,18 @@ export const FloatingActionBar: React.FC<FloatingActionBarProps> = ({
   );
 };
 
+/**
+ * Gets position styles based on bar position
+ */
 const getPositions = (
   position: 'top' | 'bottom' | 'left' | 'right',
   offset: number
 ): ViewStyle => {
   switch (position) {
     case 'top':
-      return {
-        top: offset,
-      };
+      return { top: offset };
     case 'bottom':
-      return {
-        bottom: offset,
-      };
+      return { bottom: offset };
     case 'left':
       return {
         left: offset,
@@ -224,6 +271,9 @@ const getPositions = (
   }
 };
 
+/**
+ * Gets size based on bar position
+ */
 const getSize = (position: 'top' | 'bottom' | 'left' | 'right') => {
   switch (position) {
     case 'top':
@@ -235,6 +285,9 @@ const getSize = (position: 'top' | 'bottom' | 'left' | 'right') => {
   }
 };
 
+/**
+ * Gets flex direction based on bar position
+ */
 const getDirection = (position: 'top' | 'bottom' | 'left' | 'right') => {
   switch (position) {
     case 'top':
@@ -246,9 +299,14 @@ const getDirection = (position: 'top' | 'bottom' | 'left' | 'right') => {
   }
 };
 
+/**
+ * FloatingActionBar Styles
+ * 
+ * Defines the visual styling for the bar and its containers.
+ * Uses responsive sizing and positioning.
+ */
 const styles = StyleSheet.create({
   container: {
-
     zIndex: 10,
     justifyContent: 'center',
     alignItems: 'center',

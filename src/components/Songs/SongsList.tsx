@@ -1,3 +1,14 @@
+/**
+ * A versatile list component for displaying songs with multiple view modes and sorting options.
+ * Features:
+ * - Multiple sorting views: alphabetical, albums, artists, recently added, duration
+ * - Virtualized rendering with FlashList for performance
+ * - Section headers with sticky positioning
+ * - Pull-to-refresh functionality
+ * - Alphabetical quick jump index
+ * - Optimized re-rendering with memoization
+ */
+
 import React, { useMemo, useCallback, useRef } from 'react';
 import { StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { FlashList, ContentStyle } from '@shopify/flash-list';
@@ -10,22 +21,40 @@ import { AlphabeticalIndex } from './AlphabeticalIndex';
 import { AlbumSection } from './AlbumSection';
 import { ArtistSection } from './ArtistSection';
 
+/** Layout constants for consistent sizing and spacing */
 const ITEM_HEIGHT = 60;
 const ITEM_MARGIN = 4;
 const SECTION_HEADER_HEIGHT = 40;
 const TOTAL_ITEM_HEIGHT = ITEM_HEIGHT + ITEM_MARGIN * 2;
 
-// Type for our flattened data structure
+/** Union type for list items that can be either section headers or songs */
 type ListItem = string | Song;
 
+/**
+ * Props for the SongsList component
+ */
 interface SongsListProps {
+    /** Array of songs to display */
     songs: Song[];
+    /** Current sort mode determining the view layout */
     sortBy: SortOption;
+    /** Optional styles for the list container */
     contentContainerStyle?: ContentStyle;
+    /** Callback for pull-to-refresh */
     onRefresh?: () => void;
+    /** Whether a refresh is in progress */
     refreshing?: boolean;
 }
 
+/**
+ * Main component for displaying songs in various sorted views.
+ * Handles different sorting modes:
+ * - Default: Alphabetical with letter sections
+ * - Albums: Grouped by album with artwork
+ * - Artists: Grouped by artist
+ * - Recently Added: Time-based sections (Today, Week, Month, Earlier)
+ * - Duration: Length-based sections
+ */
 export const SongsList: React.FC<SongsListProps> = ({
     songs,
     sortBy,
@@ -36,7 +65,11 @@ export const SongsList: React.FC<SongsListProps> = ({
     const listRef = useRef<FlashList<ListItem>>(null);
     const { currentSong, isPlaying, playSong, playPause } = usePlayer();
 
-    // Convert sections to flat array with headers
+    /**
+     * Transforms the flat songs array into a sectioned data structure based on the current sort mode.
+     * Returns both the flattened data array and indices for sticky headers.
+     * Memoized to prevent unnecessary recalculations.
+     */
     const { flatData, stickyHeaderIndices } = useMemo(() => {
         if (!songs.length) return { flatData: [], stickyHeaderIndices: [] };
 
@@ -186,19 +219,35 @@ export const SongsList: React.FC<SongsListProps> = ({
         };
     }, [songs, sortBy]);
 
+    /**
+     * Handles song selection and starts playback.
+     * @param song The selected song to play
+     * @param queue Array of songs to use as the playback queue
+     */
     const handlePlaySong = useCallback(async (song: Song, queue: Song[]) => {
         await playSong(song, queue);
     }, [playSong]);
 
+    /**
+     * Toggles play/pause state of the current song
+     */
     const handleTogglePlay = useCallback(async () => {
         await playPause();
     }, [playPause]);
 
+    /**
+     * Checks if a song is currently playing.
+     * Memoized to prevent unnecessary re-renders of song items.
+     */
     const isCurrentSongMemo = useCallback((song: Song) => 
         currentSong?.track_id === song.track_id, 
         [currentSong?.track_id]
     );
 
+    /**
+     * Renders either a section header or song item based on the item type.
+     * Handles special cases for album and artist views.
+     */
     const renderItem = useCallback(({ item }: { item: ListItem }) => {
         if (typeof item === 'string') {
             if (sortBy === 'albums' as SortOption) {
@@ -250,10 +299,16 @@ export const SongsList: React.FC<SongsListProps> = ({
         );
     }, [songs, handlePlaySong, handleTogglePlay, isCurrentSongMemo, isPlaying, sortBy]);
 
+    /**
+     * Determines the type of item for optimized rendering
+     */
     const getItemType = useCallback((item: ListItem) => {
         return typeof item === 'string' ? 'sectionHeader' : 'song';
     }, []);
 
+    /**
+     * Combines default list content styles with any custom styles provided
+     */
     const listContentStyle = useMemo(() => ({
         ...styles.listContent,
         paddingRight: 24,
@@ -284,7 +339,13 @@ export const SongsList: React.FC<SongsListProps> = ({
     );
 };
 
+/**
+ * Styles for the SongsList component.
+ * Includes layout for the main container, list content,
+ * section headers, and individual song items.
+ */
 const styles = StyleSheet.create({
+    // Main container with background and positioning
     container: {
         flex: 1,
         backgroundColor: colors.background,
@@ -294,10 +355,12 @@ const styles = StyleSheet.create({
         marginTop: 0,
         alignSelf: 'flex-start'
     },
+    // Content container with padding for bottom player bar
     listContent: {
         paddingBottom: 70,
         paddingHorizontal: 16,
     } as ContentStyle,
+    // Section header text styling
     sectionHeaderText: {
         color: colors.greenPrimary,
         fontSize: 16,
@@ -305,6 +368,7 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
         paddingHorizontal: 16,
     },
+    // Individual song item container with consistent sizing
     songItemContainer: {
         height: ITEM_HEIGHT,
         paddingHorizontal: 0,

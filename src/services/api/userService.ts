@@ -202,6 +202,90 @@ class UserService {
             this.handleError(error, 'fetch friend activity');
         }
     }
+
+    async verifyToken(token: string): Promise<{ user: User }> {
+        let retryCount = 0;
+        const maxRetries = 2;
+
+        const attemptVerify = async (): Promise<{ user: User }> => {
+            try {
+                console.log('[UserService] Verifying token...', {
+                    tokenLength: token?.length,
+                    tokenPrefix: token?.substring(0, 10) + '...',
+                    attempt: retryCount + 1,
+                    timestamp: new Date().toISOString()
+                });
+
+                // Log the full request details
+                console.log('[UserService] Making verify request:', {
+                    url: '/api/v1/auth/verify',
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token?.substring(0, 10)}...`
+                    },
+                    attempt: retryCount + 1,
+                    timestamp: new Date().toISOString()
+                });
+
+                const response = await userApiClient.post('/api/v1/auth/verify', {}, {
+                    headers: {
+                        Authorization: `Bearer ${token}`
+                    }
+                });
+
+                console.log('[UserService] Token verification response:', {
+                    status: response.status,
+                    hasData: !!response.data,
+                    userData: response.data?.user ? {
+                        id: response.data.user._id,
+                        username: response.data.user.username,
+                        email: response.data.user.email,
+                        hasProfile: !!response.data.user.profile,
+                        hasPreferences: !!response.data.user.preferences
+                    } : null,
+                    timestamp: new Date().toISOString()
+                });
+
+                return response.data;
+            } catch (error) {
+                console.error('[UserService] Token verification failed:', {
+                    error: error instanceof Error ? {
+                        name: error.name,
+                        message: error.message,
+                        status: (error as any).response?.status,
+                        data: (error as any).response?.data
+                    } : 'Unknown error',
+                    attempt: retryCount + 1,
+                    timestamp: new Date().toISOString()
+                });
+
+                // If it's a server error and we haven't exceeded retries, throw a retry error
+                if ((error as any).response?.status === 500 && retryCount < maxRetries) {
+                    throw new Error('RETRY');
+                }
+
+                // Otherwise handle the error normally
+                return this.handleError(error, 'token verification');
+            }
+        };
+
+        while (retryCount <= maxRetries) {
+            try {
+                return await attemptVerify();
+            } catch (error: unknown) {
+                if (error instanceof Error && error.message === 'RETRY') {
+                    retryCount++;
+                    // Wait before retrying (exponential backoff)
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+                    continue;
+                }
+                throw error;
+            }
+        }
+
+        // This line should never be reached due to handleError throwing
+        throw new Error('Maximum retries exceeded');
+    }
 }
 
 export const userService = UserService.getInstance(); 

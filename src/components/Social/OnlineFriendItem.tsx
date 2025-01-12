@@ -3,13 +3,35 @@ import { colors } from '@/constants/tokens'
 import { MaterialIcons } from '@expo/vector-icons'
 import { SongPreview } from '@/types/chat'
 
+/**
+ * OnlineFriendItem Component
+ * 
+ * A component for displaying online friends in a horizontal scrollable list.
+ * Shows user avatar, online status, and currently playing song.
+ * 
+ * Features:
+ * - Circular avatar with fallback icon
+ * - Green dot indicator for online status
+ * - Username display with ellipsis for overflow
+ * - Currently playing song preview
+ * - Press interaction for friend selection
+ */
+
 interface OnlineFriendItemProps {
+    /** Username of the friend */
     username: string
+    /** Optional URL for the friend's avatar */
     avatarUrl?: string
+    /** Currently playing song information */
     currentlyPlaying?: SongPreview
+    /** Callback when friend item is pressed */
     onPress: () => void
 }
 
+/**
+ * Renders an individual online friend item with their current status
+ * Fixed width layout optimized for horizontal scroll lists
+ */
 export function OnlineFriendItem({ username, avatarUrl, currentlyPlaying, onPress }: OnlineFriendItemProps) {
     return (
         <Pressable onPress={onPress} style={styles.container}>

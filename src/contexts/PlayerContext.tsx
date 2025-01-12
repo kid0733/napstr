@@ -1,3 +1,9 @@
+/**
+ * PlayerContext provides global state management for the music player functionality.
+ * It handles playback control, queue management, and player state synchronization.
+ * @module PlayerContext
+ */
+
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo, useReducer } from 'react';
 import { Song } from '@/services/api';
 import TrackPlayer, { Event, State, useTrackPlayerEvents, useProgress } from 'react-native-track-player';
@@ -10,33 +16,71 @@ import DownloadManager from '@/services/DownloadManager';
 import { setupTrackPlayer } from '@/services/trackPlayerSetup';
 import { songService } from '@/services/api/songService';
 
+/**
+ * Function type for playing a song with an optional queue
+ */
 type PlaySongFunction = (song: Song, queue?: Song[]) => Promise<void>;
+
+/**
+ * Function type for playing the next track
+ */
 type PlayNextFunction = () => Promise<void>;
+
+/**
+ * Function type for playing the previous track
+ */
 type PlayPreviousFunction = () => Promise<void>;
 
+/**
+ * Interface defining all the properties and methods available in the PlayerContext
+ */
 export interface PlayerContextType {
+    /** Currently loaded song */
     currentSong: Song | null;
+    /** Whether audio is currently playing */
     isPlaying: boolean;
+    /** Whether shuffle mode is enabled */
     isShuffled: boolean;
+    /** Current repeat mode: off, one (repeat single), or all (repeat queue) */
     repeatMode: 'off' | 'one' | 'all';
+    /** Playback progress from 0 to 1 */
     progress: number;
+    /** Total duration of current track in seconds */
     duration: number;
+    /** Current playback position in seconds */
     position: number;
+    /** Whether the player UI is maximized */
     isMaximized: boolean;
+    /** Current playback queue */
     queue: Song[];
+    /** Index of current song in queue */
     currentIndex: number;
+    /** Toggle play/pause state */
     playPause: () => Promise<void>;
+    /** Skip to next track */
     playNext: () => Promise<void>;
+    /** Go to previous track */
     playPrevious: () => Promise<void>;
+    /** Toggle shuffle mode */
     toggleShuffle: () => void;
+    /** Cycle through repeat modes */
     toggleRepeat: () => void;
+    /** Toggle player UI maximized state */
     toggleMaximized: () => void;
+    /** Play a specific song with optional queue */
     playSong: (song: Song, queue?: Song[]) => Promise<void>;
+    /** Seek to position in current track */
     seek: (position: number) => Promise<void>;
+    /** Set a new queue with current index */
     setQueue: (queue: Song[], index: number) => void;
+    /** Currently playing track (alias for currentSong) */
     currentTrack: Song | null;
+    /** Toggle playback state */
     togglePlayback: () => Promise<void>;
+    /** Add a song to play next in queue */
     addToUpNext: (song: Song) => void;
+    /** Update entire queue */
+    updateQueue: (newQueue: Song[]) => void;
 }
 
 const defaultContext: PlayerContextType = {
@@ -62,10 +106,17 @@ const defaultContext: PlayerContextType = {
     currentTrack: null,
     togglePlayback: async () => {},
     addToUpNext: () => {},
+    updateQueue: () => {},
 };
 
+/**
+ * React Context for the music player functionality
+ */
 export const PlayerContext = createContext<PlayerContextType>(defaultContext);
 
+/**
+ * State interface for the player reducer
+ */
 type PlayerState = {
     currentSong: Song | null;
     isPlaying: boolean;
@@ -80,6 +131,9 @@ type PlayerState = {
     currentIndex: number;
 };
 
+/**
+ * Union type of all possible actions for the player reducer
+ */
 type PlayerAction = 
     | { type: 'SET_CURRENT_SONG'; payload: Song | null }
     | { type: 'SET_PLAYING'; payload: boolean }
@@ -93,6 +147,12 @@ type PlayerAction =
     | { type: 'SET_ORIGINAL_QUEUE'; payload: Song[] }
     | { type: 'SET_CURRENT_INDEX'; payload: number };
 
+/**
+ * Reducer function to handle all player state updates
+ * @param state Current player state
+ * @param action Action to perform on the state
+ * @returns Updated player state
+ */
 function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
     switch (action.type) {
         case 'SET_CURRENT_SONG':
@@ -126,6 +186,10 @@ function playerReducer(state: PlayerState, action: PlayerAction): PlayerState {
     }
 }
 
+/**
+ * Provider component that wraps the app to provide player functionality
+ * @param children React children to be wrapped
+ */
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const [isLoading, setIsLoading] = useState(false);
     const loadingRef = useRef(false);
@@ -167,144 +231,75 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, [position, duration]);
 
-    const getAlphabeticalQueue = useCallback((songs: Song[], currentSong: Song) => {
-        // Sort all songs alphabetically by title
-        const sortedSongs = songs
-            .filter(s => s.track_id !== currentSong.track_id)
-            .sort((a, b) => a.title.localeCompare(b.title));
-
-        // Find where current song should be in alphabetical order
-        const currentIndex = sortedSongs.findIndex(s => 
-            currentSong.title.localeCompare(s.title) <= 0
-        );
-
-        if (currentIndex === -1) {
-            // Current song would be last
-            return [...sortedSongs, currentSong];
-        }
-
-        // Insert current song at the right alphabetical position
-        return [
-            ...sortedSongs.slice(0, currentIndex),
-            currentSong,
-            ...sortedSongs.slice(currentIndex)
-        ];
-    }, []);
-
-    const playSong = useCallback(async (song: Song, newQueue?: Song[]) => {
+    const playSong = useCallback(async (song: Song, queueToUse?: Song[]) => {
         try {
-            console.log('Starting playSong with:', { songTitle: song.title });
-            setIsLoading(true);
-            loadingRef.current = true;
-
-            // Reset the queue
+            // Set current song immediately
+            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
+            
+            // If a specific queue is provided, use it
+            if (queueToUse) {
+                // Find the index of the song in the provided queue
+                const songIndex = queueToUse.findIndex(s => s.track_id === song.track_id);
+                if (songIndex !== -1) {
+                    // Use the provided queue from the song's position
+                    dispatch({ 
+                        type: 'SET_QUEUE', 
+                        payload: { 
+                            queue: queueToUse,
+                            currentIndex: songIndex
+                        } 
+                    });
+                    queueManager.setQueue(queueToUse, songIndex);
+                } else {
+                    // Song not in provided queue, add it at the start
+                    const newQueue = [song, ...queueToUse];
+                    dispatch({ 
+                        type: 'SET_QUEUE', 
+                        payload: { 
+                            queue: newQueue,
+                            currentIndex: 0
+                        } 
+                    });
+                    queueManager.setQueue(newQueue, 0);
+                }
+            } else {
+                // No queue provided, check current queue
+                const songIndex = state.queue.findIndex(s => s.track_id === song.track_id);
+                if (songIndex !== -1) {
+                    // Song is in current queue, update index
+                    dispatch({ type: 'SET_CURRENT_INDEX', payload: songIndex });
+                    queueManager.setQueue(state.queue, songIndex);
+                } else {
+                    // Add song to current queue
+                    const newQueue = [...state.queue];
+                    newQueue.splice(state.currentIndex + 1, 0, song);
+                    dispatch({ 
+                        type: 'SET_QUEUE', 
+                        payload: { 
+                            queue: newQueue,
+                            currentIndex: state.currentIndex + 1
+                        } 
+                    });
+                    queueManager.setQueue(newQueue, state.currentIndex + 1);
+                }
+            }
+            
+            // Play the song
             await TrackPlayer.reset();
-
-            // Prepare the track
-            const track = {
+            await TrackPlayer.add({
                 id: song.track_id,
                 url: `https://music.napstr.uk/songs/${song.track_id}.mp3`,
                 title: song.title,
                 artist: song.artists.join(', '),
                 artwork: song.album_art,
-                duration: song.duration_ms / 1000,
-            };
-
-            // Add and play the track
-            await TrackPlayer.add(track);
-            await TrackPlayer.play();
-
-            // Update state
-            dispatch({ type: 'SET_CURRENT_SONG', payload: song });
-            
-            let initialQueue: Song[];
-            if (newQueue) {
-                // If song is in current queue, clean up everything before it
-                const songIndexInQueue = state.queue.findIndex(s => s.track_id === song.track_id);
-                if (songIndexInQueue !== -1) {
-                    // Remove all songs before the selected song
-                    initialQueue = state.queue.slice(songIndexInQueue);
-                } else {
-                    initialQueue = [song, ...newQueue.filter(s => s.track_id !== song.track_id)];
-                }
-            } else {
-                // Get initial songs
-                const response = await api.songs.getAll({ 
-                    sort: state.isShuffled ? 'smart' : 'alphabetical',
-                    fromSongId: song.track_id,
-                    limit: 50
-                });
-                
-                // Filter out current song and ensure it's first in queue
-                initialQueue = [
-                    song,
-                    ...(response.songs || []).filter(s => s.track_id !== song.track_id)
-                ];
-            }
-
-            // Try to get more songs if needed
-            try {
-                if (initialQueue.length < 50) {
-                    const additionalResponse = await api.songs.getAll({ 
-                        sort: state.isShuffled ? 'smart' : 'alphabetical',
-                        fromSongId: initialQueue[initialQueue.length - 1].track_id,
-                        limit: 50 - initialQueue.length,
-                        after: true
-                    });
-                    
-                    if (additionalResponse.songs?.length) {
-                        const newSongs = additionalResponse.songs.filter(
-                            s => !initialQueue.some(q => q.track_id === s.track_id)
-                        );
-                        initialQueue = [...initialQueue, ...newSongs];
-                    }
-                }
-            } catch (error) {
-                console.log('Could not fetch additional songs:', error);
-            }
-
-            // Update state based on shuffle status
-            if (state.isShuffled) {
-                // Save alphabetical queue before shuffling
-                dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: initialQueue });
-                
-                // Apply random shuffle
-                const shuffledQueue = smartShuffle(initialQueue, song);
-                
-                dispatch({ 
-                    type: 'SET_QUEUE', 
-                    payload: { 
-                        queue: shuffledQueue,
-                        currentIndex: 0
-                    } 
-                });
-                queueManager.setQueue(shuffledQueue, 0);
-            } else {
-                dispatch({ 
-                    type: 'SET_QUEUE', 
-                    payload: { 
-                        queue: initialQueue,
-                        currentIndex: 0
-                    } 
-                });
-                dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: initialQueue });
-                queueManager.setQueue(initialQueue, 0);
-            }
-            
-            queueManager.setShuffled(state.isShuffled);
-            
-            console.log('Queue setup complete:', {
-                queueLength: initialQueue.length,
-                isShuffled: state.isShuffled,
-                currentSong: song.title
             });
+            await TrackPlayer.play();
+            
         } catch (error) {
             console.error('Error playing song:', error);
-        } finally {
-            setIsLoading(false);
-            loadingRef.current = false;
+            throw error;
         }
-    }, [state.isShuffled, state.queue, smartShuffle]);
+    }, [state.queue, state.currentIndex]);
 
     // Track Player Events
     useTrackPlayerEvents([Event.PlaybackState, Event.PlaybackError, Event.PlaybackQueueEnded], async (event) => {
@@ -398,55 +393,37 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const playNext = useCallback(async () => {
         if (state.currentIndex < state.queue.length - 1) {
             const nextSong = state.queue[state.currentIndex + 1];
-            await playSong(nextSong, state.queue);
+            const remainingQueue = state.queue.slice(state.currentIndex + 1);
+            await playSong(nextSong, remainingQueue);
         }
     }, [state.currentIndex, state.queue, playSong]);
 
     const playPrevious = useCallback(async () => {
         if (state.currentIndex > 0) {
             const previousSong = state.queue[state.currentIndex - 1];
-            await playSong(previousSong, state.queue);
+            const remainingQueue = state.queue.slice(state.currentIndex);
+            await playSong(previousSong, remainingQueue);
         }
     }, [state.currentIndex, state.queue, playSong]);
 
-    const smartShuffle = useCallback((songs: Song[], currentSong: Song) => {
-        // Keep current song first
-        const otherSongs = songs.filter(s => s.track_id !== currentSong.track_id);
-        
-        // Completely random shuffle with Fisher-Yates algorithm
-        for (let i = otherSongs.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [otherSongs[i], otherSongs[j]] = [otherSongs[j], otherSongs[i]];
-        }
-
-        // Add some chaos by reversing sections randomly
-        const sectionSize = Math.floor(Math.random() * 10) + 5; // Random section size between 5-15
-        for (let i = 0; i < otherSongs.length; i += sectionSize) {
-            if (Math.random() > 0.5) { // 50% chance to reverse each section
-                const section = otherSongs.slice(i, i + sectionSize);
-                section.reverse();
-                otherSongs.splice(i, section.length, ...section);
-            }
-        }
-
-        return [currentSong, ...otherSongs];
-    }, []);
-
     const toggleShuffle = useCallback(async () => {
         try {
+            const currentSong = state.currentSong;
+            if (!currentSong) return;
+
             if (!state.isShuffled) {
-                // Turning shuffle on
-                const currentSong = state.currentSong;
-                if (!currentSong) return;
+                // Get smart shuffled queue from the random endpoint
+                const response = await api.songs.getRandom({ 
+                    fromSongId: currentSong.track_id,
+                    limit: 50,
+                    excludeIds: [currentSong.track_id]
+                });
 
-                // Save original (alphabetical) queue before shuffling
-                const alphabeticalQueue = getAlphabeticalQueue(state.queue, currentSong);
-                dispatch({ type: 'SET_ORIGINAL_QUEUE', payload: alphabeticalQueue });
+                const shuffledQueue = [
+                    currentSong,
+                    ...(response.songs || [])
+                ];
 
-                // Apply random shuffle
-                const shuffledQueue = smartShuffle(state.queue, currentSong);
-
-                // Update state
                 dispatch({ type: 'SET_SHUFFLE', payload: true });
                 dispatch({
                     type: 'SET_QUEUE',
@@ -455,34 +432,26 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
                         currentIndex: 0
                     }
                 });
-
-                // Update queue manager
                 queueManager.setQueue(shuffledQueue, 0);
                 queueManager.setShuffled(true);
             } else {
-                // Turning shuffle off - restore alphabetical queue
-                const currentSong = state.currentSong;
-                if (!currentSong) return;
-
-                const alphabeticalQueue = getAlphabeticalQueue(state.queue, currentSong);
-                const currentIndex = alphabeticalQueue.findIndex(s => s.track_id === currentSong.track_id);
-
+                // When turning shuffle off, just keep current song
+                const queue = [currentSong];  // We know currentSong is not null here
+                dispatch({ type: 'SET_SHUFFLE', payload: false });
                 dispatch({
                     type: 'SET_QUEUE',
                     payload: {
-                        queue: alphabeticalQueue,
-                        currentIndex: Math.max(0, currentIndex)
+                        queue,
+                        currentIndex: 0
                     }
                 });
-                queueManager.setQueue(alphabeticalQueue, Math.max(0, currentIndex));
-                
-                dispatch({ type: 'SET_SHUFFLE', payload: false });
+                queueManager.setQueue(queue, 0);
                 queueManager.setShuffled(false);
             }
         } catch (error) {
             console.error('Error toggling shuffle:', error);
         }
-    }, [state.isShuffled, state.currentSong, state.queue, smartShuffle, getAlphabeticalQueue]);
+    }, [state.isShuffled, state.currentSong]);
 
     const togglePlayback = useCallback(async () => {
         try {
@@ -537,6 +506,27 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         }
     }, [state.currentIndex, state.currentSong, state.queue, state.isShuffled]);
 
+    const updateQueue = useCallback((newQueue: Song[]) => {
+        try {
+            // Keep current song at its position
+            if (state.currentSong) {
+                const currentSongIndex = newQueue.findIndex(s => s.track_id === state.currentSong?.track_id);
+                if (currentSongIndex !== -1) {
+                    dispatch({ 
+                        type: 'SET_QUEUE', 
+                        payload: { 
+                            queue: newQueue,
+                            currentIndex: currentSongIndex
+                        } 
+                    });
+                    queueManager.setQueue(newQueue, currentSongIndex);
+                }
+            }
+        } catch (error) {
+            console.error('Error updating queue:', error);
+        }
+    }, [state.currentSong]);
+
     const value = {
         currentSong: state.currentSong,
         isPlaying: state.isPlaying,
@@ -569,6 +559,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
         currentTrack: state.currentSong,
         togglePlayback,
         addToUpNext,
+        updateQueue,
     };
 
     return (
@@ -578,6 +569,11 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     );
 }
 
+/**
+ * Custom hook to access the player context
+ * @throws {Error} If used outside of PlayerProvider
+ * @returns PlayerContext value
+ */
 export const usePlayer = () => {
     const context = useContext(PlayerContext);
     if (!context) {

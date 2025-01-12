@@ -1,5 +1,5 @@
 import React, { memo, useState, useCallback, useEffect, useRef, useMemo } from 'react';
-import { View, Text, Image, StyleSheet, Dimensions, Pressable, Platform, ScrollView, Alert } from 'react-native';
+import { View, Text, Image, StyleSheet, Dimensions, Pressable, Platform, ScrollView, Alert, ViewStyle, NativeSyntheticEvent, NativeScrollEvent, SectionList, LogBox } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { colors } from '@/constants/tokens';
@@ -18,7 +18,8 @@ import Animated, {
     Easing,
     interpolate,
     withTiming,
-    withRepeat
+    withRepeat,
+    withSequence
 } from 'react-native-reanimated';
 import { SongOptions } from '@/components/SongOptions/SongOptions';
 import { Song, LyricsData, LyricsLine } from '@/services/api';
@@ -29,6 +30,25 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '@/types/navigation';
 import { useLikes } from '@/contexts/LikesContext';
 import * as Haptics from 'expo-haptics';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+/**
+ * MaximizedPlayer Component
+ * 
+ * Full-screen music player with artwork, controls, and queue management.
+ * Features:
+ * - Blurred album art background
+ * - Artwork flip animation for lyrics
+ * - Playback controls with haptic feedback
+ * - Queue management with drag-to-reorder
+ */
+
+// Ignore shadow calculation warnings
+LogBox.ignoreLogs([
+    'View #[0-9]+ of type RCTView has a shadow set but cannot calculate shadow efficiently',
+    'View #3593 of type RCTView has a shadow set but cannot calculate shadow efficiently',
+    '(ADVICE) View #[0-9]+ of type RCTView has a shadow set but cannot calculate shadow efficiently'
+]);
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -45,10 +65,13 @@ interface TrackInfo {
     track_id: string;
 }
 
+/**
+ * Props for the MaximizedPlayer component
+ */
 interface MaximizedPlayerProps {
-    visible: boolean;
-    onClose: () => void;
-    currentTrack: TrackInfo | null;
+    visible: boolean;              // Whether the player is visible
+    onClose: () => void;          // Callback when player is closed
+    currentTrack: TrackInfo | null; // Currently playing track info
 }
 
 interface ControlsProps {
@@ -62,6 +85,9 @@ interface ControlsProps {
     onToggleRepeat: () => void;
 }
 
+/**
+ * Controls component for playback actions (play/pause, next, previous, shuffle, repeat)
+ */
 const Controls = memo(function Controls({ 
     isPlaying, 
     onPlayPause, 
@@ -72,8 +98,32 @@ const Controls = memo(function Controls({
     onToggleShuffle,
     onToggleRepeat
 }: ControlsProps) {
+    // Create shared values for each button's animation
+    const shuffleScale = useSharedValue(1);
+    const previousScale = useSharedValue(1);
+    const playScale = useSharedValue(1);
+    const nextScale = useSharedValue(1);
+    const repeatScale = useSharedValue(1);
+
+    const animatePress = useCallback((scale: Animated.SharedValue<number>) => {
+        scale.value = withSpring(0.8, {
+            damping: 15,
+            mass: 0.5,
+            stiffness: 200
+        });
+        setTimeout(() => {
+            scale.value = withSpring(1, {
+                damping: 15,
+                mass: 0.5,
+                stiffness: 200
+            });
+        }, 100);
+    }, []);
+
     const handlePlayPause = useCallback(async () => {
         try {
+            animatePress(playScale);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             await onPlayPause();
         } catch (error) {
             console.error('Error toggling play/pause:', error);
@@ -82,6 +132,8 @@ const Controls = memo(function Controls({
 
     const handleNext = useCallback(async () => {
         try {
+            animatePress(nextScale);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             await onNext();
         } catch (error) {
             console.error('Error playing next song:', error);
@@ -90,49 +142,108 @@ const Controls = memo(function Controls({
 
     const handlePrevious = useCallback(async () => {
         try {
+            animatePress(previousScale);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             await onPrevious();
         } catch (error) {
             console.error('Error playing previous song:', error);
         }
     }, [onPrevious]);
 
+    const handleToggleShuffle = useCallback(async () => {
+        try {
+            animatePress(shuffleScale);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onToggleShuffle();
+        } catch (error) {
+            console.error('Error toggling shuffle:', error);
+        }
+    }, [onToggleShuffle]);
+
+    const handleToggleRepeat = useCallback(async () => {
+        try {
+            animatePress(repeatScale);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onToggleRepeat();
+        } catch (error) {
+            console.error('Error toggling repeat:', error);
+        }
+    }, [onToggleRepeat]);
+
+    // Create animated styles for each button
+    const shuffleStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: shuffleScale.value }]
+    }));
+
+    const previousStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: previousScale.value }]
+    }));
+
+    const playStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: playScale.value }]
+    }));
+
+    const nextStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: nextScale.value }]
+    }));
+
+    const repeatStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: repeatScale.value }]
+    }));
+
     return (
         <View style={styles.controls}>
-            <Pressable style={styles.controlButton} onPress={onToggleShuffle}>
-                <Ionicons 
-                    name={isShuffled ? "shuffle" : "shuffle-outline"} 
-                    size={24} 
-                    color={isShuffled ? colors.greenPrimary : colors.greenTertiary} 
-                />
-            </Pressable>
-            <Pressable style={styles.controlButton} onPress={handlePrevious}>
-                <Ionicons name="play-skip-back" size={32} color={colors.greenTertiary} />
-            </Pressable>
-            <Pressable style={styles.playButton} onPress={handlePlayPause}>
-                <Ionicons name={isPlaying ? "pause" : "play"} size={32} color={colors.background} />
-            </Pressable>
-            <Pressable style={styles.controlButton} onPress={handleNext}>
-                <Ionicons name="play-skip-forward" size={32} color={colors.greenTertiary} />
-            </Pressable>
-            <Pressable style={styles.controlButton} onPress={onToggleRepeat}>
-                {repeatMode === 'one' ? (
-                    <MaterialIcons name="repeat-one" size={24} color={colors.greenPrimary} />
-                ) : (
+            <Animated.View style={shuffleStyle}>
+                <Pressable style={styles.controlButton} onPress={handleToggleShuffle}>
                     <Ionicons 
-                        name={repeatMode === 'all' ? "repeat" : "repeat-outline"} 
+                        name={isShuffled ? "shuffle" : "shuffle-outline"} 
                         size={24} 
-                        color={repeatMode !== 'off' ? colors.greenPrimary : colors.greenTertiary} 
+                        color={isShuffled ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.5)'} 
                     />
-                )}
-            </Pressable>
+                </Pressable>
+            </Animated.View>
+            <Animated.View style={previousStyle}>
+                <Pressable style={styles.controlButton} onPress={handlePrevious}>
+                    <Ionicons name="play-skip-back" size={32} color="rgba(255, 255, 255, 0.7)" />
+                </Pressable>
+            </Animated.View>
+            <Animated.View style={playStyle}>
+                <Pressable style={[styles.playButton]} onPress={handlePlayPause}>
+                    <Ionicons name={isPlaying ? "pause" : "play"} size={32} color="rgba(255, 255, 255, 0.6)" />
+                </Pressable>
+            </Animated.View>
+            <Animated.View style={nextStyle}>
+                <Pressable style={styles.controlButton} onPress={handleNext}>
+                    <Ionicons name="play-skip-forward" size={32} color="rgba(255, 255, 255, 0.7)" />
+                </Pressable>
+            </Animated.View>
+            <Animated.View style={repeatStyle}>
+                <Pressable style={styles.controlButton} onPress={handleToggleRepeat}>
+                    {repeatMode === 'one' ? (
+                        <MaterialIcons name="repeat-one" size={24} color="rgba(255, 255, 255, 0.9)" />
+                    ) : (
+                        <Ionicons 
+                            name={repeatMode === 'all' ? "repeat" : "repeat-outline"} 
+                            size={24} 
+                            color={repeatMode !== 'off' ? 'rgba(255, 255, 255, 0.9)' : 'rgba(255, 255, 255, 0.5)'} 
+                        />
+                    )}
+                </Pressable>
+            </Animated.View>
         </View>
     );
 });
 
+/**
+ * Props for the song info display
+ */
 interface SongInfoProps {
-    track: TrackInfo;
+    track: TrackInfo;  // Track information to display
 }
 
+/**
+ * Displays track title and artist information
+ */
 const SongInfo = memo(function SongInfo({ track }: SongInfoProps) {
     return (
         <View style={styles.trackInfoContainer}>
@@ -146,156 +257,280 @@ interface GestureContext extends Record<string, unknown> {
     startY: number;
 }
 
-const QueueItem = memo(function QueueItem({ 
-    title, 
-    artist, 
-    artwork, 
-    isPlaying,
-    onPress
-}: { 
-    title: string; 
-    artist: string; 
+interface QueueItemData {
+    track_id: string;
+    title: string;
+    artist: string;
+    artwork: string;
+    fullSong: Song;
+    index: number;
+}
+
+interface QueueItemProps {
+    title: string;
+    artist: string;
     artwork: string;
     isPlaying: boolean;
     onPress: () => void;
-}) {
-    const titleStyle = useMemo(() => [
-        styles.queueItemTitle,
-        isPlaying && styles.queueItemTitleActive
-    ], [isPlaying]);
-
-    return (
-        <>
-            <Pressable 
-                style={styles.queueItem}
-                onPress={onPress}
-            >
-                <Image 
-                    source={{ uri: artwork }} 
-                    style={styles.queueItemArtwork}
-                />
-                <View style={styles.queueItemInfo}>
-                    <Text 
-                        style={titleStyle}
-                        numberOfLines={1}
-                    >
-                        {title}
-                    </Text>
-                    <Text style={styles.queueItemArtist} numberOfLines={1}>
-                        {artist}
-                    </Text>
-                </View>
-                {isPlaying && (
-                    <View style={styles.queueItemPlayingIndicator}>
-                        <Ionicons 
-                            name="musical-notes" 
-                            size={16} 
-                            color={colors.greenPrimary}
-                        />
-                    </View>
-                )}
-            </Pressable>
-            <View style={styles.queueItemDivider} />
-        </>
-    );
-});
-
-interface LyricLineProps {
-    line: LyricsLine;
-    type: 'active' | 'previous' | 'next' | 'hidden';
+    onDragEnd?: (from: number, to: number) => void;
     index: number;
-    currentLineIndex: number;
+    itemCount: number;
+    movingIndex: Animated.SharedValue<number>;
+    activeIndex: Animated.SharedValue<number>;
 }
 
-const LyricLine = memo(function LyricLine({ line, type, index, currentLineIndex }: LyricLineProps) {
-    const basePosition = index * LINE_HEIGHT;
-    const translateY = useSharedValue(basePosition);
-    const scale = useSharedValue(type === 'active' ? 1 : 0.95);
-    const opacity = useSharedValue(
-        type === 'active' ? 1 :
-        type === 'hidden' ? 0.1 :
-        0.8
-    );
+const QUEUE_ITEM_HEIGHT = 70; // Height of each queue item
+const QUEUE_ITEM_MARGIN = 4;
+const TOTAL_QUEUE_ITEM_HEIGHT = QUEUE_ITEM_HEIGHT + QUEUE_ITEM_MARGIN * 2;
 
-    useEffect(() => {
-        // First move with timing for smooth initial movement
-        translateY.value = withSpring(basePosition, {
-            damping: 15,
-            stiffness: 80,
-            mass: 0.5,
-            velocity: 0,
-            restDisplacementThreshold: 0.01,
-            restSpeedThreshold: 0.01,
-        });
-
-        // Smooth opacity transitions with spring
-        opacity.value = withSpring(
-            type === 'active' ? 1 :
-            type === 'hidden' ? 0.1 :
-            0.8,
-            {
-                damping: 12,
-                stiffness: 100,
-                mass: 0.4,
-            }
-        );
-
-        // Smooth scale transitions with spring
-        scale.value = withSpring(
-            type === 'active' ? 1 : 0.95,
-            {
-                damping: 12,
-                stiffness: 100,
-                mass: 0.4,
-            }
-        );
-    }, [basePosition, type]);
-
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [
-            { translateY: translateY.value },
-            { scale: scale.value }
-        ],
-        opacity: opacity.value
-    }));
-
-    return (
-        <Animated.View 
-            style={[
-                styles.lyricLineContainer,
-                animatedStyle
-            ]}
-        >
-            <Text 
-                style={[
-                    styles.lyricLine,
-                    type === 'active' && styles.lyricLineActive,
-                    type === 'previous' && styles.lyricLinePrevious,
-                    type === 'next' && styles.lyricLineNext,
-                    type === 'hidden' && styles.lyricLineHidden
-                ]} 
-            >
-                {line.words}
-            </Text>
-        </Animated.View>
-    );
-});
-
-// Spring configuration optimized for iOS
 const SPRING_CONFIG: WithSpringConfig = {
-    damping: 20,
-    mass: 1,
-    stiffness: 100,
+    damping: 15,
+    mass: 0.8,
+    stiffness: 150,
     overshootClamping: false,
     restDisplacementThreshold: 0.01,
     restSpeedThreshold: 0.01,
 };
 
-type QueueSection = {
-    type: 'artwork' | 'info' | 'progress' | 'controls' | 'additional' | 'queue';
-    data: any[];
+const IMMEDIATE_SPRING = {
+    damping: Platform.select({ ios: 20, android: 12 }),
+    mass: Platform.select({ ios: 0.6, android: 0.4 }),
+    stiffness: Platform.select({ ios: 250, android: 300 }),
+    restDisplacementThreshold: 0.01,
+    restSpeedThreshold: 0.01,
 };
 
+const IMMEDIATE_TIMING = {
+    duration: Platform.select({ ios: 250, android: 200 }),
+    easing: Easing.out(Easing.exp),
+};
+
+/**
+ * Queue item component with drag-to-reorder functionality
+ */
+const QueueItem = memo(function QueueItem({ 
+    title, 
+    artist, 
+    artwork,
+    isPlaying,
+    onPress,
+    onDragEnd,
+    index,
+    itemCount,
+    movingIndex,
+    activeIndex
+}: QueueItemProps) {
+    const translateY = useSharedValue(0);
+    const isPressed = useSharedValue(false);
+    const contextY = useSharedValue(0);
+    const scale = useSharedValue(1);
+
+    const panGesture = useAnimatedGestureHandler<PanGestureHandlerGestureEvent, { startY: number }>({
+        onStart: (_, context) => {
+            isPressed.value = true;
+            activeIndex.value = index;
+            contextY.value = translateY.value;
+            context.startY = translateY.value;
+            if (Platform.OS === 'android') {
+                scale.value = withTiming(1.03, IMMEDIATE_TIMING);
+            } else {
+                scale.value = withSpring(1.03, IMMEDIATE_SPRING);
+            }
+        },
+        onActive: (event, context) => {
+            translateY.value = context.startY + event.translationY;
+            const newMovingIndex = Math.round(translateY.value / TOTAL_QUEUE_ITEM_HEIGHT);
+            movingIndex.value = Math.max(-index, Math.min(itemCount - 1 - index, newMovingIndex));
+        },
+        onEnd: () => {
+            const finalPosition = Math.round(translateY.value / TOTAL_QUEUE_ITEM_HEIGHT);
+            const boundedPosition = Math.max(-index, Math.min(itemCount - 1 - index, finalPosition));
+            
+            if (boundedPosition !== 0 && onDragEnd) {
+                runOnJS(onDragEnd)(index, index + boundedPosition);
+            }
+
+            if (Platform.OS === 'android') {
+                translateY.value = withTiming(0, IMMEDIATE_TIMING);
+                scale.value = withTiming(1, IMMEDIATE_TIMING);
+            } else {
+                translateY.value = withSpring(0, IMMEDIATE_SPRING);
+                scale.value = withSpring(1, IMMEDIATE_SPRING);
+            }
+            isPressed.value = false;
+            activeIndex.value = -1;
+            movingIndex.value = 0;
+        }
+    });
+
+    const animatedStyle = useAnimatedStyle(() => {
+        if (activeIndex.value === -1) {
+            return {
+                transform: [
+                    { 
+                        translateY: Platform.OS === 'android' 
+                            ? withTiming(0, IMMEDIATE_TIMING)
+                            : withSpring(0, IMMEDIATE_SPRING)
+                    },
+                    { scale: scale.value }
+                ],
+                zIndex: 0,
+                shadowOpacity: Platform.OS === 'android'
+                    ? withTiming(0, IMMEDIATE_TIMING)
+                    : withSpring(0, IMMEDIATE_SPRING),
+            };
+        }
+
+        if (index === activeIndex.value) {
+            return {
+                transform: [
+                    { translateY: translateY.value },
+                    { scale: scale.value }
+                ],
+                zIndex: 999,
+                shadowOpacity: Platform.OS === 'android'
+                    ? withTiming(0.3, IMMEDIATE_TIMING)
+                    : withSpring(0.3, IMMEDIATE_SPRING),
+            };
+        }
+
+        const moveDistance = movingIndex.value;
+        const shouldMove = 
+            (index > activeIndex.value && index <= activeIndex.value + moveDistance) ||
+            (index < activeIndex.value && index >= activeIndex.value + moveDistance);
+
+        const movement = shouldMove
+            ? Platform.OS === 'android'
+                ? withTiming(
+                    TOTAL_QUEUE_ITEM_HEIGHT * (moveDistance > 0 ? -1 : 1),
+                    IMMEDIATE_TIMING
+                )
+                : withSpring(
+                    TOTAL_QUEUE_ITEM_HEIGHT * (moveDistance > 0 ? -1 : 1),
+                    IMMEDIATE_SPRING
+                )
+            : Platform.OS === 'android'
+                ? withTiming(0, IMMEDIATE_TIMING)
+                : withSpring(0, IMMEDIATE_SPRING);
+
+        return {
+            transform: [
+                { translateY: movement },
+                { 
+                    scale: Platform.OS === 'android'
+                        ? withTiming(1, IMMEDIATE_TIMING)
+                        : withSpring(1, IMMEDIATE_SPRING)
+                }
+            ],
+            zIndex: 0,
+            shadowOpacity: Platform.OS === 'android'
+                ? withTiming(0, IMMEDIATE_TIMING)
+                : withSpring(0, IMMEDIATE_SPRING),
+        };
+    });
+
+    const containerStyle = useAnimatedStyle(() => {
+        const animationConfig = Platform.OS === 'android' ? IMMEDIATE_TIMING : IMMEDIATE_SPRING;
+        const animationFn = Platform.OS === 'android' ? withTiming : withSpring;
+
+        return {
+            backgroundColor: animationFn(
+                isPressed.value 
+                    ? 'rgba(255, 255, 255, 0.15)' 
+                    : 'transparent',
+                animationConfig
+            ),
+            borderRadius: 8,
+        };
+    });
+
+    return (
+        <Animated.View style={[styles.queueItemContainer, animatedStyle]}>
+            <Animated.View style={containerStyle}>
+                <Pressable 
+                    style={styles.queueItem}
+                    onPress={onPress}
+                    android_ripple={{
+                        color: 'rgba(255, 255, 255, 0.1)',
+                        borderless: true,
+                    }}
+                >
+                    <Image 
+                        source={{ uri: artwork }} 
+                        style={styles.queueItemArtwork}
+                    />
+                    <View style={styles.queueItemInfo}>
+                        <Text 
+                            style={styles.queueItemTitle}
+                            numberOfLines={1}
+                        >
+                            {title}
+                        </Text>
+                        <Text style={styles.queueItemArtist} numberOfLines={1}>
+                            {artist}
+                        </Text>
+                    </View>
+                    {isPlaying && (
+                        <View style={styles.queueItemPlayingIndicator}>
+                            <Ionicons 
+                                name="musical-notes" 
+                                size={16} 
+                                color={colors.greenPrimary}
+                            />
+                        </View>
+                    )}
+                    {!isPlaying && (
+                        <PanGestureHandler 
+                            onGestureEvent={panGesture} 
+                            enabled={!isPlaying}
+                            activeOffsetY={[-10, 10]}
+                            hitSlop={{ left: 20, right: 20 }}
+                        >
+                            <Animated.View>
+                                <Pressable style={styles.dragHandle}>
+                                    <Ionicons 
+                                        name="reorder-three" 
+                                        size={24} 
+                                        color={colors.greenTertiary}
+                                    />
+                                </Pressable>
+                            </Animated.View>
+                        </PanGestureHandler>
+                    )}
+                </Pressable>
+            </Animated.View>
+        </Animated.View>
+    );
+});
+
+type QueueItemType = {
+    track_id: string;
+    title: string;
+    artist: string;
+    artwork: string;
+    fullSong: Song;
+    index: number;
+};
+
+type SectionItem = number | QueueItemType;
+
+type MainSection = {
+    title: 'main';
+    data: number[];
+    type: 'main';
+};
+
+type QueueSection = {
+    title: 'queue';
+    data: QueueItemType[];
+    type: 'queue';
+};
+
+type Section = MainSection | QueueSection;
+
+/**
+ * Main player component with artwork, controls, and queue
+ */
 export const MaximizedPlayer = memo(function MaximizedPlayer({
     visible,
     onClose,
@@ -303,6 +538,9 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
 }: MaximizedPlayerProps) {
     const { 
         isPlaying,
+        queue = [],
+        currentIndex,
+        playSong,
         playPause,
         playNext,
         playPrevious,
@@ -313,169 +551,92 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         progress = 0,
         duration = 0,
         position = 0,
-        queue = [],
-        currentIndex,
-        playSong,
-        seek
+        seek,
+        setQueue,
     } = usePlayer();
-    const { isLiked, toggleLike } = useLikes();
 
-    const [showOptions, setShowOptions] = useState(false);
-    const [isClosing, setIsClosing] = useState(false);
-    const translateY = useSharedValue(SCREEN_HEIGHT);
-
-    const { lyrics, fetchLyrics, isLoading } = useLyrics();
-
-    const [showLyrics, setShowLyrics] = useState(false);
-    const flipAnimation = useSharedValue(0);
-    const lyricsTranslateY = useSharedValue(0);
-
-    const [imageLoaded, setImageLoaded] = useState(true);
-    const fadeAnim = useSharedValue(1);
-
-    const navigation = useNavigation<NavigationProp>();
-
-    // Update image loading effect
+    // Add state for optimistic queue updates
+    const [optimisticQueue, setOptimisticQueue] = useState<Song[]>([]);
+    
+    // Update optimistic queue only when necessary
     useEffect(() => {
-        if (currentTrack?.artwork) {
-            fadeAnim.value = 0;
-            setImageLoaded(false);
-            
-            Image.prefetch(currentTrack.artwork)
-                .then(() => {
-                    setImageLoaded(true);
-                    fadeAnim.value = withTiming(1, {
-                        duration: 300,
-                        easing: Easing.bezier(0.4, 0, 0.2, 1)
-                    });
-                })
-                .catch(() => {
-                    // If loading fails, keep showing the app icon
-                    setImageLoaded(false);
-                    fadeAnim.value = withTiming(1, {
-                        duration: 300,
-                        easing: Easing.bezier(0.4, 0, 0.2, 1)
-                    });
-                });
-
-            return () => {
-                fadeAnim.value = 1;
-                setImageLoaded(true);
-            };
-        }
-    }, [currentTrack?.artwork]);
-
-    const fadeStyle = useAnimatedStyle(() => ({
-        opacity: fadeAnim.value
-    }));
-
-    const getCurrentLineIndex = useCallback((currentPosition: number) => {
-        if (!lyrics?.lines) return -1;
-        
-        const positionMs = (currentPosition * 1000) + 250;
-        let start = 0;
-        let end = lyrics.lines.length - 1;
-        
-        while (start <= end) {
-            const mid = Math.floor((start + end) / 2);
-            const line = lyrics.lines[mid];
-            const nextLine = lyrics.lines[mid + 1];
-            
-            if (positionMs >= line.startTimeMs && (!nextLine || positionMs < nextLine.startTimeMs)) {
-                return mid;
-            }
-            
-            if (positionMs < line.startTimeMs) {
-                end = mid - 1;
-            } else {
-                start = mid + 1;
-            }
+        // Skip if queues are the same
+        if (JSON.stringify(optimisticQueue) === JSON.stringify(queue)) {
+            return;
         }
         
-        return -1;
-    }, [lyrics]);
-
-    const lyricsAnimatedStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: lyricsTranslateY.value }]
-    }), []);
-
-    useEffect(() => {
-        if (!lyrics?.lines || !showLyrics) return;
-
-        const currentLineIndex = getCurrentLineIndex(position);
-        if (currentLineIndex >= 0) {
-            // Smoothly animate to the new position with spring
-            lyricsTranslateY.value = withSpring(-currentLineIndex * LINE_HEIGHT, {
-                damping: 15,
-                stiffness: 80,
-                mass: 0.5,
-                velocity: 0,
-                restDisplacementThreshold: 0.01,
-                restSpeedThreshold: 0.01,
-            });
+        // Only update if lengths are different or track IDs don't match
+        if (optimisticQueue.length !== queue.length || 
+            optimisticQueue.some((song, i) => song.track_id !== queue[i]?.track_id)) {
+            setOptimisticQueue(queue);
         }
-    }, [position, lyrics?.lines, showLyrics, getCurrentLineIndex]);
+    }, [queue]);
 
+    // Handle shuffle state changes
     useEffect(() => {
-        if (currentTrack?.track_id && showLyrics) {
-            fetchLyrics(currentTrack.track_id);
+        // When shuffle is enabled/disabled, sync with actual queue
+        if (JSON.stringify(optimisticQueue) !== JSON.stringify(queue)) {
+            setOptimisticQueue(queue);
         }
-    }, [currentTrack?.track_id, showLyrics, fetchLyrics]);
+    }, [isShuffled]);
 
-    useEffect(() => {
-        console.log('=== MaximizedPlayer Visibility Debug ===');
-        console.log('Visibility changed:', {
-            visible,
-            isClosing,
-            currentTrack: currentTrack?.title
-        });
+    // Modify sections to use optimistic queue instead of actual queue
+    const sections = useMemo((): Section[] => {
+        if (!currentTrack) return [];
+
+        // Get the queue data first, limit to next 20 songs
+        const upNextSongs = optimisticQueue
+            .slice(currentIndex + 1, currentIndex + 21) // Take only next 20 songs
+            .map((song, index) => ({
+                track_id: song.track_id,
+                title: song.title,
+                artist: song.artists.join(', '),
+                artwork: song.album_art,
+                fullSong: song,
+                index: index
+            }));
+
+        return [
+            { 
+                title: 'main' as const,
+                type: 'main' as const,
+                data: [0, 1, 2, 3, 4]
+            },
+            {
+                title: 'queue' as const,
+                type: 'queue' as const,
+                data: upNextSongs
+            }
+        ];
+    }, [currentTrack, optimisticQueue, currentIndex]);
+
+    /**
+     * Handles queue item reordering with animation
+     */
+    const handleQueueReorder = useCallback(async (fromIndex: number, toIndex: number) => {
+        // Create new queue array for optimistic update
+        const newQueue = [...optimisticQueue];
+        const actualFromIndex = currentIndex + 1 + fromIndex;
+        const actualToIndex = currentIndex + 1 + toIndex;
         
-        if (visible) {
-            setIsClosing(false);
-            translateY.value = SCREEN_HEIGHT;
-            // Start animation immediately with a smoother spring
-            translateY.value = withSpring(0, {
-                ...SPRING_CONFIG,
-                damping: 30,
-                velocity: -SCREEN_HEIGHT
-            });
-        } else {
-            translateY.value = SCREEN_HEIGHT;
-            setShowOptions(false);
-            setIsClosing(false);
-        }
-    }, [visible]);
-
-    const handleLyricsPress = useCallback(() => {
-        if (!lyrics && currentTrack?.track_id && !isLoading) {
-            fetchLyrics(currentTrack.track_id).catch(() => {
-                // Silently handle the error - the UI will show "No lyrics available"
-            });
-        }
-
-        const toValue = showLyrics ? 0 : 1;
-        flipAnimation.value = withTiming(toValue, {
-            duration: 1200,
-            easing: Easing.bezier(0.4, 0.0, 0.2, 1),
-        }, (finished) => {
-            if (finished) {
-                runOnJS(setShowLyrics)(!showLyrics);
+        // Immediately update the optimistic queue
+        const [movedItem] = newQueue.splice(actualFromIndex, 1);
+        newQueue.splice(actualToIndex, 0, movedItem);
+        setOptimisticQueue(newQueue);
+        
+        // Fire and forget the backend update
+        try {
+            await setQueue(newQueue, currentIndex);
+        } catch (error: unknown) {
+            console.error('Error updating queue:', error);
+            // Only revert if really necessary
+            if (error && typeof error === 'object' && 'severity' in error && error.severity === 'critical') {
+                setOptimisticQueue(queue);
             }
-        });
-    }, [currentTrack, lyrics, isLoading, showLyrics, flipAnimation, fetchLyrics]);
-
-    const handleClose = useCallback(() => {
-        setIsClosing(true);
-        translateY.value = withSpring(SCREEN_HEIGHT, SPRING_CONFIG, (finished) => {
-            if (finished) {
-                runOnJS(onClose)();
-                runOnJS(setIsClosing)(false);
-            }
-        });
-    }, [onClose]);
+        }
+    }, [optimisticQueue, currentIndex, queue, setQueue]);
 
     const handlePlayPause = useCallback(async () => {
-        console.log('Manual play/pause triggered');
         try {
             await playPause();
         } catch (error) {
@@ -500,151 +661,42 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
     }, [playPrevious]);
 
     const handleQueueItemPress = useCallback(async (song: Song) => {
-        console.log('MaximizedPlayer - Queue Item Pressed:', {
-            songTitle: song.title,
-            currentIndex,
-            isShuffled
-        });
         try {
-            await playSong(song, queue);
+            // Find the index of the clicked song in the queue
+            const songIndex = optimisticQueue.findIndex(s => s.track_id === song.track_id);
+            if (songIndex === -1) return;
+
+            // Get only the songs from the clicked song onwards
+            const remainingQueue = optimisticQueue.slice(songIndex);
+            
+            // Update optimistic queue immediately
+            setOptimisticQueue(remainingQueue);
+            
+            // Play the song with the remaining queue
+            await playSong(song, remainingQueue);
         } catch (error) {
             console.error('Error playing song from queue:', error);
+            // Revert optimistic update on error
+            setOptimisticQueue(queue);
         }
-    }, [playSong, queue, currentIndex, isShuffled]);
+    }, [optimisticQueue, playSong, queue]);
 
-    const panGestureEvent = useAnimatedGestureHandler<PanGestureHandlerGestureEvent, GestureContext>({
-        onStart: (_, context) => {
-            context.startY = translateY.value;
-        },
-        onActive: (event, context) => {
-            const resistance = Math.abs(event.velocityY) > 1000 ? 0.5 : 1;
-            const newTranslateY = context.startY + Math.max(0, event.translationY * resistance);
-            translateY.value = newTranslateY;
-        },
-        onEnd: (event) => {
-            const velocity = event.velocityY;
-            const shouldClose = 
-                event.translationY > SCREEN_HEIGHT * 0.2 || 
-                (velocity > 1000 && event.translationY > SCREEN_HEIGHT * 0.1);
+    const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+    const { isLiked, toggleLike } = useLikes();
 
-            if (shouldClose) {
-                translateY.value = withSpring(SCREEN_HEIGHT, SPRING_CONFIG, (finished) => {
-                    if (finished) {
-                        runOnJS(onClose)();
-                    }
-                });
-            } else {
-                translateY.value = withSpring(0, SPRING_CONFIG);
-            }
-        },
-    });
+    const likeScale = useSharedValue(1);
+    const playlistScale = useSharedValue(1);
+    const shareScale = useSharedValue(1);
+    const lyricsScale = useSharedValue(1);
 
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: translateY.value }],
-        height: SCREEN_HEIGHT,
-        width: '100%',
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: colors.background,
-        zIndex: 1004,
-        elevation: 1004,
-    }));
-
-    const frontAnimatedStyle = useAnimatedStyle(() => ({
-        transform: [
-            { perspective: 2000 },
-            { scale: interpolate(flipAnimation.value, [0, 0.5, 1], [1, 0.95, 0.9]) },
-            { rotateY: `${interpolate(flipAnimation.value, [0, 1], [0, 180])}deg` }
-        ],
-        backfaceVisibility: 'hidden',
-        zIndex: flipAnimation.value >= 0.5 ? 0 : 1,
-        opacity: interpolate(flipAnimation.value, [0, 0.4, 0.5], [1, 0.8, 0])
-    }));
-
-    const backAnimatedStyle = useAnimatedStyle(() => ({
-        transform: [
-            { perspective: 2000 },
-            { scale: interpolate(flipAnimation.value, [0, 0.5, 1], [0.9, 0.95, 1]) },
-            { rotateY: `${interpolate(flipAnimation.value, [0, 1], [180, 360])}deg` }
-        ],
-        backfaceVisibility: 'hidden',
-        position: 'absolute',
-        top: 0, left: 0, right: 0, bottom: 0,
-        zIndex: flipAnimation.value >= 0.5 ? 1 : 0,
-        opacity: interpolate(flipAnimation.value, [0.5, 0.6, 1], [0, 0.8, 1])
-    }));
-
-    const renderLyrics = useCallback(() => {
-        if (!lyrics?.lines || lyrics.lines.length === 0) {
-            return (
-                <View style={styles.noLyricsContainer}>
-                    <Text style={styles.lyricLine}>No lyrics available</Text>
-                </View>
-            );
-        }
-
-        const currentLineIndex = getCurrentLineIndex(position);
-        // Show 3 lines: 1 previous, current, and 1 next
-        const visibleLines = [-1, 0, 1].map(offset => {
-            const index = currentLineIndex + offset;
-            if (index < 0 || index >= lyrics.lines.length) return null;
-            return {
-                line: lyrics.lines[index],
-                type: offset === 0 ? 'active' : 
-                      offset < 0 ? 'previous' :
-                      'next'
-            };
-        }).filter((item): item is { line: LyricsLine; type: 'active' | 'previous' | 'next' | 'hidden' } => item !== null);
-
-        return (
-            <View style={styles.lyricsContentWrapper}>
-                <View style={styles.highlightContainer}>
-                    <View style={styles.highlightBar} />
-                </View>
-                <View style={styles.lyricsScrollContent}>
-                    {visibleLines.map((item, index) => (
-                        <LyricLine
-                            key={`${currentLineIndex}-${index}`}
-                            line={item.line}
-                            type={item.type}
-                            index={index}
-                            currentLineIndex={currentLineIndex}
-                        />
-                    ))}
-                </View>
-            </View>
-        );
-    }, [lyrics?.lines, position, getCurrentLineIndex]);
-
-    const sections: QueueSection[] = currentTrack ? [
-        { type: 'artwork', data: [{ currentTrack, showLyrics, lyrics }] },
-        { type: 'info', data: [{ track: currentTrack }] },
-        { type: 'progress', data: [{ progress, position, duration, seek }] },
-        { type: 'controls', data: [{ 
-            isPlaying, handlePlayPause, handleNext, handlePrevious,
-            isShuffled, repeatMode, toggleShuffle, toggleRepeat 
-        }] },
-        { type: 'additional', data: [{ showLyrics, handleLyricsPress }] },
-        { type: 'queue', data: (() => {
-            // Get only the next 15 songs
-            const upNextSongs = queue.slice(currentIndex + 1, currentIndex + 16);
-            return upNextSongs.map(song => ({
-                track_id: song.track_id,
-                title: song.title,
-                artist: song.artists.join(', '),
-                artwork: song.album_art,
-                fullSong: song
-            }));
-        })()} 
-    ] : [];
+    // Add these shared values for queue animations
+    const movingIndex = useSharedValue(0);
+    const activeIndex = useSharedValue(-1);
 
     // Convert TrackInfo to Song for playlist
     const trackToSong = (track: TrackInfo): Song => ({
         track_id: track.track_id,
-        spotify_id: '', // Not needed for playlist operations
+        spotify_id: '',
         title: track.title,
         artists: [track.artist],
         album: '',
@@ -660,257 +712,390 @@ export const MaximizedPlayer = memo(function MaximizedPlayer({
         popularity: 0
     });
 
+    const animatePress = useCallback((scale: Animated.SharedValue<number>) => {
+        scale.value = withSpring(0.8, {
+            damping: 15,
+            mass: 0.5,
+            stiffness: 200
+        });
+        setTimeout(() => {
+            scale.value = withSpring(1, {
+                damping: 15,
+                mass: 0.5,
+                stiffness: 200
+            });
+        }, 100);
+    }, []);
+
     const handleLikePress = useCallback(async () => {
         if (!currentTrack?.track_id) return;
         try {
+            animatePress(likeScale);
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             await toggleLike(currentTrack.track_id);
         } catch (error) {
+            // Provide visual feedback for error
+            likeScale.value = withSequence(
+                withSpring(1.2),
+                withSpring(0.8),
+                withSpring(1)
+            );
             console.error('Error handling like press:', error);
-            Alert.alert('Error', 'Failed to update like status. Please try again.');
+            Alert.alert(
+                'Error',
+                'Failed to update like status. Please try again.',
+                [{ text: 'OK' }]
+            );
         }
     }, [currentTrack?.track_id, toggleLike]);
 
-    const renderItem = useCallback(({ item, index }: { item: any, index: number }) => {
-        if (!currentTrack) return null;
-        
-        const section = sections[index];
-        switch (section.type) {
-            case 'artwork':
-                return (
-                    <View style={styles.artworkContainer}>
-                        <Animated.View style={[styles.artworkWrapper, frontAnimatedStyle]}>
-                            <Image 
-                                source={imageLoaded ? { uri: currentTrack.artwork } : appIcon}
-                                style={styles.artwork}
-                                resizeMode="cover"
-                            />
-                        </Animated.View>
-                        <Animated.View style={[styles.artworkWrapper, backAnimatedStyle]}>
-                            <View style={styles.lyricsWrapper}>
-                                <Image 
-                                    source={imageLoaded ? { uri: currentTrack.artwork } : appIcon}
-                                    style={[StyleSheet.absoluteFill]}
-                                    blurRadius={50}
-                                    resizeMode="cover"
-                                />
-                                <View style={styles.darkOverlay} />
-                                <View style={styles.lyricsContainer}>
-                                    <View style={styles.lyricsContent}>
-                                        {renderLyrics()}
-                                    </View>
-                                </View>
-                            </View>
-                        </Animated.View>
-                    </View>
-                );
-            case 'info':
-                return <SongInfo track={currentTrack} />;
-            case 'progress':
-                return (
-                    <View style={styles.progressContainer}>
-                        <ProgressBar
-                            progress={duration > 0 ? Math.min(position / duration, 1) : 0}
-                            currentTime={position}
-                            duration={duration}
-                            onSeek={seek}
-                        />
-                    </View>
-                );
-            case 'controls':
-                return (
-                    <Controls 
-                        isPlaying={isPlaying}
-                        onPlayPause={handlePlayPause}
-                        onNext={handleNext}
-                        onPrevious={handlePrevious}
-                        isShuffled={isShuffled}
-                        repeatMode={repeatMode}
-                        onToggleShuffle={toggleShuffle}
-                        onToggleRepeat={toggleRepeat}
-                    />
-                );
-            case 'additional':
-                return (
-                    <View style={styles.additionalControls}>
-                        <Pressable 
-                            style={styles.controlButton}
-                            onPress={handleLikePress}
-                            disabled={!currentTrack?.track_id}
-                        >
-                            <Ionicons 
-                                name={currentTrack?.track_id && isLiked(currentTrack.track_id) ? "heart" : "heart-outline"} 
-                                size={24} 
-                                color={currentTrack?.track_id && isLiked(currentTrack.track_id) ? colors.greenPrimary : colors.greenTertiary} 
-                            />
-                        </Pressable>
-                        <Pressable 
-                            style={styles.controlButton}
-                            onPress={() => {
-                                if (currentTrack) {
-                                    navigation.navigate('PlaylistOptions', {
-                                        songs: [trackToSong(currentTrack)],
-                                        title: 'Add to Playlist'
-                                    });
-                                }
-                            }}
-                            disabled={!currentTrack}
-                        >
-                            <Ionicons name="list" size={24} color={currentTrack ? colors.greenTertiary : colors.greenTertiary} />
-                        </Pressable>
-                        <Pressable style={styles.controlButton}>
-                            <Ionicons name="share-outline" size={24} color={colors.greenTertiary} />
-                        </Pressable>
-                        <Pressable style={styles.controlButton} onPress={handleLyricsPress}>
-                            <Ionicons 
-                                name="text-outline" 
-                                size={24} 
-                                color={showLyrics ? colors.greenPrimary : colors.greenTertiary} 
-                            />
-                        </Pressable>
-                    </View>
-                );
-            case 'queue':
-                return (
-                    <View style={styles.queueContainer}>
-                        <Text style={styles.queueHeader}>Up Next</Text>
-                        <FlashList
-                            data={sections[5].data}
-                            renderItem={({ item }) => (
-                                <QueueItem
-                                    title={item.title}
-                                    artist={item.artist}
-                                    artwork={item.artwork}
-                                    isPlaying={false}
-                                    onPress={() => handleQueueItemPress(item.fullSong)}
-                                />
-                            )}
-                            estimatedItemSize={70}
-                            showsVerticalScrollIndicator={false}
-                            contentContainerStyle={styles.listContent}
-                        />
-                    </View>
-                );
-            default:
-                return null;
+    const handleAddToPlaylist = useCallback(async () => {
+        try {
+            animatePress(playlistScale);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            if (currentTrack) {
+                navigation.navigate('PlaylistOptions', {
+                    songs: [trackToSong(currentTrack)],
+                    title: 'Add to Playlist'
+                });
+            }
+        } catch (error) {
+            console.error('Error handling add to playlist:', error);
         }
-    }, [currentTrack, showLyrics, progress, position, duration, isPlaying, handlePlayPause, handleNext, handlePrevious,
-        isShuffled, repeatMode, toggleShuffle, toggleRepeat, handleLyricsPress, handleQueueItemPress, frontAnimatedStyle,
-        backAnimatedStyle, renderLyrics]);
+    }, [currentTrack, navigation]);
 
-    if (!visible || !currentTrack || isClosing) {
+    const handleShare = useCallback(async () => {
+        try {
+            animatePress(shareScale);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            // Share functionality here
+        } catch (error) {
+            console.error('Error handling share:', error);
+        }
+    }, []);
+
+    // Add state for lyrics display
+    const [showLyrics, setShowLyrics] = useState(false);
+    const artworkRotation = useSharedValue(0);
+
+    /**
+     * Handles lyrics button press - flips artwork to show/hide lyrics
+     */
+    const handleLyrics = useCallback(async () => {
+        try {
+            animatePress(lyricsScale);
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            // Flip animation
+            artworkRotation.value = withSpring(showLyrics ? 0 : 180, {
+                damping: 15,
+                stiffness: 150,
+            });
+            setShowLyrics(!showLyrics);
+        } catch (error) {
+            console.error('Error handling lyrics:', error);
+        }
+    }, [showLyrics]);
+
+    // Add animated style for artwork rotation
+    const artworkAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [
+            { perspective: 1000 },
+            { rotateY: `${artworkRotation.value}deg` }
+        ]
+    }));
+
+    const likeStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: likeScale.value }]
+    }));
+
+    const playlistStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: playlistScale.value }]
+    }));
+
+    const shareStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: shareScale.value }]
+    }));
+
+    const lyricsStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: lyricsScale.value }]
+    }));
+
+    // Add lyrics context
+    const { lyrics } = useLyrics();
+
+    const renderItem = useCallback(({ item, section }: { item: number | QueueItemType, section: Section }) => {
+        if (section.type === 'main') {
+            const mainItem = item as number;
+            switch (mainItem) {
+                case 0: // Artwork
+                    return (
+                        <View style={styles.artworkContainer}>
+                            <Animated.View style={[styles.artworkWrapper, artworkAnimatedStyle]}>
+                                {showLyrics ? (
+                                    <View style={styles.lyricsWrapper}>
+                                        <View style={styles.darkOverlay} />
+                                        <View style={styles.lyricsContainer}>
+                                            <Lyrics
+                                                lines={lyrics?.lines || []}
+                                                currentTimeMs={position}
+                                                isSynchronized={true}
+                                            />
+                                        </View>
+                                    </View>
+                                ) : (
+                                    <Image 
+                                        source={{ uri: currentTrack?.artwork }}
+                                        style={styles.artwork}
+                                        resizeMode="cover"
+                                    />
+                                )}
+                            </Animated.View>
+                        </View>
+                    );
+                case 1: // Track Info
+                    return (
+                        <View style={styles.trackInfoContainer}>
+                            <Text style={styles.title} numberOfLines={1}>
+                                {currentTrack?.title}
+                            </Text>
+                            <Text style={styles.artist} numberOfLines={1}>
+                                {currentTrack?.artist}
+                            </Text>
+                        </View>
+                    );
+                case 2: // Progress
+                    return (
+                        <View style={styles.progressContainer}>
+                            <ProgressBar
+                                progress={progress}
+                                currentTime={position}
+                                duration={duration}
+                                onSeek={seek}
+                            />
+                        </View>
+                    );
+                case 3: // Controls
+                    return (
+                        <Controls
+                            isPlaying={isPlaying}
+                            onPlayPause={handlePlayPause}
+                            onNext={handleNext}
+                            onPrevious={handlePrevious}
+                            isShuffled={isShuffled}
+                            repeatMode={repeatMode}
+                            onToggleShuffle={toggleShuffle}
+                            onToggleRepeat={toggleRepeat}
+                        />
+                    );
+                case 4: // Additional Controls
+                    return (
+                        <View style={styles.additionalControls}>
+                            <Animated.View style={likeStyle}>
+                                <Pressable 
+                                    style={styles.controlButton}
+                                    onPress={handleLikePress}
+                                    disabled={!currentTrack?.track_id}
+                                >
+                                    <Ionicons 
+                                        name={currentTrack?.track_id && isLiked(currentTrack.track_id) ? "heart" : "heart-outline"} 
+                                        size={26} 
+                                        color={currentTrack?.track_id && isLiked(currentTrack.track_id) ? colors.greenPrimary : 'rgba(255, 255, 255, 0.7)'} 
+                                    />
+                                </Pressable>
+                            </Animated.View>
+                            <Animated.View style={playlistStyle}>
+                                <Pressable 
+                                    style={styles.controlButton}
+                                    onPress={handleAddToPlaylist}
+                                    disabled={!currentTrack}
+                                >
+                                    <Ionicons 
+                                        name="list" 
+                                        size={26} 
+                                        color="rgba(255, 255, 255, 0.7)" 
+                                    />
+                                </Pressable>
+                            </Animated.View>
+                            <Animated.View style={shareStyle}>
+                                <Pressable 
+                                    style={styles.controlButton}
+                                    onPress={handleShare}
+                                >
+                                    <Ionicons 
+                                        name="share-outline" 
+                                        size={26} 
+                                        color="rgba(255, 255, 255, 0.7)" 
+                                    />
+                                </Pressable>
+                            </Animated.View>
+                            <Animated.View style={lyricsStyle}>
+                                <Pressable 
+                                    style={styles.controlButton}
+                                    onPress={handleLyrics}
+                                >
+                                    <Ionicons 
+                                        name="text-outline" 
+                                        size={26} 
+                                        color="rgba(255, 255, 255, 0.7)" 
+                                    />
+                                </Pressable>
+                            </Animated.View>
+                        </View>
+                    );
+                default:
+                    return null;
+            }
+        }
+        return null;
+    }, [
+        currentTrack,
+        isPlaying,
+        progress,
+        position,
+        duration,
+        seek,
+        handlePlayPause,
+        handleNext,
+        handlePrevious,
+        isShuffled,
+        repeatMode,
+        toggleShuffle,
+        toggleRepeat,
+        handleLikePress,
+        handleAddToPlaylist,
+        handleShare,
+        handleLyrics,
+        isLiked,
+        likeStyle,
+        playlistStyle,
+        shareStyle,
+        lyricsStyle
+    ]);
+
+    // Add back image loading effect for iOS
+    const [imageLoaded, setImageLoaded] = useState(true);
+    const fadeAnim = useSharedValue(1);
+
+    useEffect(() => {
+        if (currentTrack?.artwork && Platform.OS === 'ios') {
+            fadeAnim.value = 0;
+            setImageLoaded(false);
+            
+            Image.prefetch(currentTrack.artwork)
+                .then(() => {
+                    setImageLoaded(true);
+                    fadeAnim.value = withTiming(1, {
+                        duration: 300,
+                        easing: Easing.bezier(0.4, 0, 0.2, 1)
+                    });
+                })
+                .catch(() => {
+                    setImageLoaded(false);
+                    fadeAnim.value = withTiming(1, {
+                        duration: 300,
+                        easing: Easing.bezier(0.4, 0, 0.2, 1)
+                    });
+                });
+
+            return () => {
+                fadeAnim.value = 1;
+                setImageLoaded(true);
+            };
+        }
+    }, [currentTrack?.artwork]);
+
+    const fadeStyle = useAnimatedStyle(() => ({
+        opacity: fadeAnim.value
+    }));
+
+    const renderSectionHeader = useCallback(({ section }: { section: Section }) => 
+        section.type === 'queue' && section.data.length > 0 ? (
+            <View style={styles.queueOuterContainer}>
+                <View style={styles.queueContainer}>
+                    <Text style={styles.queueHeader}>Up Next</Text>
+                </View>
+                {section.data.map((item: QueueItemType, index: number) => (
+                    <QueueItem
+                        key={item.track_id}
+                        title={item.title}
+                        artist={item.artist}
+                        artwork={item.artwork}
+                        isPlaying={false}
+                        onPress={() => handleQueueItemPress(item.fullSong)}
+                        onDragEnd={handleQueueReorder}
+                        index={index}
+                        itemCount={section.data.length}
+                        movingIndex={movingIndex}
+                        activeIndex={activeIndex}
+                    />
+                ))}
+                <View style={styles.queueFooter} />
+            </View>
+        ) : null
+    , [handleQueueItemPress, handleQueueReorder, movingIndex, activeIndex]);
+
+    if (!visible || !currentTrack) {
         return null;
     }
 
     return (
-        <>
-            <PanGestureHandler onGestureEvent={panGestureEvent}>
-                <Animated.View 
-                    style={[styles.container, animatedStyle]}
-                    entering={FadeIn.duration(300)}
-                >
-                    {currentTrack && (
-                        <Animated.Image 
-                            source={imageLoaded ? { uri: currentTrack.artwork } : appIcon}
-                            style={[StyleSheet.absoluteFill, fadeStyle]}
-                            blurRadius={50}
-                            resizeMode="cover"
-                        />
-                    )}
-                    <Animated.View 
-                        style={[
-                            StyleSheet.absoluteFill, 
-                            { backgroundColor: 'rgba(0, 0, 0, 0.7)' },
-                            fadeStyle
-                        ]} 
-                    />
-                    <Blur
-                        style={StyleSheet.absoluteFill}
-                        intensity={25}
-                        backgroundColor="rgba(18, 18, 18, 0.4)"
-                    />
-                    <ScrollView
-                        style={[styles.content, { zIndex: 1005 }]}
-                        contentContainerStyle={{ paddingBottom: SCREEN_HEIGHT * 0.12 }}
-                        showsVerticalScrollIndicator={false}
-                    >
-                        <View style={styles.header}>
-                            <Pressable onPress={handleClose} style={styles.closeButton}>
-                                <Ionicons name="chevron-down" size={28} color={colors.greenTertiary} />
-                            </Pressable>
-                            <View style={styles.headerTextContainer}>
-                                <Text style={styles.headerTitle}>Now Playing</Text>
-                            </View>
-                            <Pressable 
-                                style={styles.menuButton} 
-                                onPress={() => setShowOptions(true)}
-                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                            >
-                                <Ionicons name="ellipsis-horizontal" size={24} color={colors.greenTertiary} />
-                            </Pressable>
-                        </View>
+        <SafeAreaView style={styles.container}>
+            <Image 
+                source={{ uri: currentTrack?.artwork }}
+                style={[StyleSheet.absoluteFill, { opacity: 0.5 }]}
+                resizeMode="cover"
+                blurRadius={Platform.OS === 'android' ? 25 : 0}
+            />
+            
+            <Blur
+                style={StyleSheet.absoluteFill}
+                intensity={Platform.OS === 'ios' ? 50 : 0}
+                backgroundColor="rgba(18, 18, 18, 0.3)"
+            />
 
-                        {/* Artwork Section */}
-                        {renderItem({ item: sections[0], index: 0 })}
-                        
-                        {/* Info Section */}
-                        {renderItem({ item: sections[1], index: 1 })}
-                        
-                        {/* Progress Section */}
-                        {renderItem({ item: sections[2], index: 2 })}
-                        
-                        {/* Controls Section */}
-                        {renderItem({ item: sections[3], index: 3 })}
-                        
-                        {/* Additional Controls Section */}
-                        {renderItem({ item: sections[4], index: 4 })}
-                        
-                        {/* Queue Section */}
-                        <View style={styles.queueContainer}>
-                            <Text style={styles.queueHeader}>Up Next</Text>
-                            <FlashList
-                                data={sections[5].data}
-                                renderItem={({ item }) => (
-                                    <QueueItem
-                                        title={item.title}
-                                        artist={item.artist}
-                                        artwork={item.artwork}
-                                        isPlaying={false}
-                                        onPress={() => handleQueueItemPress(item.fullSong)}
-                                    />
-                                )}
-                                estimatedItemSize={70}
-                                showsVerticalScrollIndicator={false}
-                                contentContainerStyle={styles.listContent}
-                            />
-                        </View>
-                    </ScrollView>
-                </Animated.View>
-            </PanGestureHandler>
-            {currentTrack && (
-                <SongOptions
-                    visible={showOptions}
-                    onClose={() => setShowOptions(false)}
-                    song={{
-                        track_id: currentTrack.track_id,
-                        spotify_id: '',
-                        title: currentTrack.title,
-                        artists: [currentTrack.artist],
-                        album: '',
-                        duration_ms: 0,
-                        explicit: false,
-                        isrc: '',
-                        spotify_url: '',
-                        preview_url: '',
-                        album_art: currentTrack.artwork,
-                        genres: [],
-                        audio_format: '',
-                        added_at: '',
-                        popularity: 0
+            <View style={styles.content}>
+                <View style={styles.header}>
+                    <Pressable onPress={onClose} style={styles.closeButton}>
+                        <Ionicons name="chevron-down" size={28} color={colors.text} />
+                    </Pressable>
+                    <View style={styles.headerTextContainer}>
+                    </View>
+                </View>
+
+                <SectionList<SectionItem, Section>
+                    sections={sections}
+                    showsVerticalScrollIndicator={false}
+                    stickySectionHeadersEnabled={false}
+                    bounces={Platform.OS === 'ios'}
+                    overScrollMode="never"
+                    keyExtractor={(item) => {
+                        if (typeof item === 'number') {
+                            return `main-${item}`;
+                        }
+                        return item.track_id;
                     }}
+                    renderItem={renderItem}
+                    renderSectionHeader={renderSectionHeader}
+                    renderSectionFooter={({ section }) =>
+                        section.type === 'queue' && section.data.length > 0 ? (
+                            <View style={styles.queueFooter} />
+                        ) : null
+                    }
+                    contentContainerStyle={{
+                        paddingBottom: Platform.OS === 'ios' 
+                            ? SCREEN_HEIGHT * 0.12  // Increased padding for iOS
+                            : SCREEN_HEIGHT * 0.05,
+                    }}
+                    style={styles.sectionList}
+                    removeClippedSubviews={Platform.OS === 'android'}
+                    maxToRenderPerBatch={Platform.OS === 'android' ? 5 : 10}
+                    windowSize={Platform.OS === 'android' ? 3 : 5}
+                    updateCellsBatchingPeriod={Platform.OS === 'android' ? 50 : undefined}
+                    SectionSeparatorComponent={() => <View style={{ height: 20 }} />}
+                    ItemSeparatorComponent={() => <View style={{ height: 2 }} />}
                 />
-            )}
-        </>
+            </View>
+        </SafeAreaView>
     );
 });
 
@@ -923,21 +1108,23 @@ const styles = StyleSheet.create({
         bottom: 0,
         width: '100%',
         height: SCREEN_HEIGHT,
-        backgroundColor: colors.background,
+        backgroundColor: 'transparent',
         zIndex: 1004,
         elevation: 1004,
     },
     content: {
         flex: 1,
         backgroundColor: 'transparent',
-        paddingTop: Platform.OS === 'ios' ? SCREEN_HEIGHT * 0.06 : SCREEN_HEIGHT * 0.04,
+        paddingTop: Platform.OS === 'ios' ? 0 : SCREEN_HEIGHT * 0.02,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: '5%',
-        marginBottom: '3%',
+        marginBottom: Platform.OS === 'ios' ? '1%' : '3%',
+        backgroundColor: 'transparent',
+        height: Platform.OS === 'ios' ? 44 : 56,
     },
     closeButton: {
         padding: '2%',
@@ -951,19 +1138,30 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         fontSize: SCREEN_WIDTH * 0.04,
-        color: colors.text,
+        color: 'rgba(255, 255, 255, 0.7)',
         fontWeight: '600',
+        textShadowColor: 'rgba(0, 0, 0, 0.3)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
     },
     artworkContainer: {
         width: '85%',
         aspectRatio: 1,
         marginHorizontal: '7.5%',
-        marginTop: '8%',
+        marginTop: Platform.OS === 'ios' ? '4%' : '5%',
         borderRadius: 8,
         position: 'relative',
-        backgroundColor: 'transparent',
-        zIndex: 2,
-        elevation: 2,
+        backgroundColor: Platform.OS === 'android' 
+            ? 'rgba(0, 0, 0, 0.5)' 
+            : 'rgba(18, 18, 18, 0.5)',
+        ...(Platform.OS === 'ios' ? {
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.3,
+            shadowRadius: 4,
+        } : {
+            elevation: 5,
+        }),
     },
     artwork: {
         width: '100%',
@@ -973,102 +1171,138 @@ const styles = StyleSheet.create({
     trackInfoContainer: {
         alignItems: 'center',
         paddingHorizontal: '5%',
-        marginTop: '5%',
+        marginTop: Platform.OS === 'ios' ? '3%' : '4%',
     },
     title: {
         fontSize: SCREEN_WIDTH * 0.06,
-        color: colors.text,
+        color: 'rgba(255, 255, 255, 0.9)',
         fontWeight: '600',
         marginBottom: '2%',
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
     },
     artist: {
         fontSize: SCREEN_WIDTH * 0.045,
-        color: colors.text,
-        opacity: 0.8,
+        color: 'rgba(255, 255, 255, 0.7)',
+        opacity: 0.9,
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
     },
     progressContainer: {
         paddingHorizontal: '5%',
-        marginTop: '7%',
+        marginTop: Platform.OS === 'ios' ? '4%' : '5%',
     },
     controls: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: '8%',
-        marginTop: '7%',
+        marginTop: Platform.OS === 'ios' ? '4%' : '5%',
     },
     controlButton: {
-        padding: '2.5%',
-    },
-    playButton: {
-        width: SCREEN_WIDTH * 0.16,
-        aspectRatio: 1,
-        borderRadius: SCREEN_WIDTH * 0.08,
-        backgroundColor: colors.text,
+        width: 44,
+        height: 44,
         justifyContent: 'center',
         alignItems: 'center',
+        borderRadius: 22,
+    },
+    playButton: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginHorizontal: 24,
     },
     additionalControls: {
         flexDirection: 'row',
-        justifyContent: 'space-around',
+        justifyContent: 'space-evenly',
+        alignItems: 'center',
+        width: '100%',
         paddingHorizontal: '15%',
-        marginTop: '7%',
+        marginTop: Platform.OS === 'ios' ? '4%' : '5%',
+        marginBottom: Platform.OS === 'ios' ? '2%' : '3%',
     },
     mainScroll: {
         flex: 1,
         zIndex: 1001,
         elevation: 1001,
+        minHeight: SCREEN_HEIGHT,
+    },
+    queueOuterContainer: {
+        marginTop: Platform.OS === 'ios' ? '4%' : '5%',
+        marginHorizontal: '5%',
+        padding: '4%',
+        opacity: 1,
+        borderRadius: 16,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
     },
     queueContainer: {
-        paddingHorizontal: '5%',
-        marginTop: '5%',
-        flex: 1,
+        marginBottom: '4%',
     },
     queueHeader: {
         fontSize: SCREEN_WIDTH * 0.045,
-        color: colors.text,
+        color: 'rgba(255, 255, 255, 0.8)',
         fontWeight: '600',
-        marginBottom: '3%',
+        marginBottom: '1%',
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 3,
+    },
+    queueListContainer: {
+        backgroundColor: 'rgba(0, 0, 0, 0)',
+        borderRadius: 12,
+        overflow: 'hidden',
+        marginBottom: Platform.OS === 'android' ? SCREEN_HEIGHT * 0.15 : SCREEN_HEIGHT * 0.12,
     },
     queueItem: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: '3%',
+        paddingLeft: '4%',
+        paddingRight: '2%',
         gap: SCREEN_WIDTH * 0.03,
-        zIndex: 1002,
-        elevation: 1002,
+        backgroundColor: 'transparent',
+        minHeight: 70,
+        marginHorizontal: '2%',
+        borderRadius: 8,
     },
     queueItemArtwork: {
-        width: SCREEN_WIDTH * 0.1,
+        width: SCREEN_WIDTH * 0.12,
         aspectRatio: 1,
         borderRadius: 4,
     },
     queueItemInfo: {
         flex: 1,
+        justifyContent: 'center',
     },
     queueItemTitle: {
-        fontSize: SCREEN_WIDTH * 0.035,
-        color: colors.text,
+        fontSize: SCREEN_WIDTH * 0.04,
+        color: 'rgba(255, 255, 255, 0.8)',
         fontWeight: '500',
+        marginBottom: 4,
     },
     queueItemTitleActive: {
         color: colors.text,
     },
     queueItemArtist: {
-        fontSize: SCREEN_WIDTH * 0.03,
-        color: colors.text,
-        opacity: 0.8,
+        fontSize: SCREEN_WIDTH * 0.035,
+        color: 'rgba(255, 255, 255, 0.6)',
     },
     queueItemPlayingIndicator: {
         width: SCREEN_WIDTH * 0.06,
         aspectRatio: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        backgroundColor: 'transparent',
     },
     queueItemDivider: {
         height: StyleSheet.hairlineWidth,
         backgroundColor: colors.text,
-        opacity: 0.1,
+        opacity: 0,
         marginLeft: '13%',
     },
     artworkWrapper: {
@@ -1081,12 +1315,17 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: colors.background,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3.84,
-        elevation: 5,
+        backgroundColor: Platform.OS === 'ios' 
+            ? 'rgba(18, 18, 18, 0.5)'
+            : colors.background,
+        ...(Platform.OS === 'ios' ? {
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.25,
+            shadowRadius: 3.84,
+        } : {
+            elevation: 5,
+        }),
     },
     lyricsWrapper: {
         flex: 1,
@@ -1197,6 +1436,35 @@ const styles = StyleSheet.create({
         paddingHorizontal: '4%',
     },
     listContent: {
-        paddingBottom: SCREEN_HEIGHT * 0.12,
+        paddingBottom: Platform.OS === 'android' ? SCREEN_HEIGHT * 0.2 : SCREEN_HEIGHT * 0.12,
     },
+    queueItemActive: {
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    },
+    queueItemDragHandle: {
+        paddingHorizontal: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+        opacity: 0.5,
+    },
+    sectionList: {
+        flex: 1,
+        backgroundColor: 'transparent',
+    },
+    queueFooter: {
+        height: Platform.OS === 'android' ? SCREEN_HEIGHT * 0.1 : SCREEN_HEIGHT * 0.05,
+    },
+    queueItemContainer: {
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 8,
+        marginVertical: QUEUE_ITEM_MARGIN,
+    },
+    dragHandle: {
+        paddingHorizontal: 8,
+        paddingVertical: 12,
+        justifyContent: 'center',
+        alignItems: 'center',
+        opacity: 0.8,
+        marginRight: -8,
+    }
 });

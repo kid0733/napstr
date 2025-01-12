@@ -70,6 +70,13 @@ export interface GetAllOptions {
     genre?: string;
 }
 
+export interface RandomOptions {
+    limit?: number;
+    genre?: string;
+    fromSongId?: string;
+    excludeIds?: string[];
+}
+
 export const api = {
     songs: {
         getAll: async (options: GetAllOptions = {}): Promise<PaginatedResponse<Song>> => {
@@ -83,12 +90,26 @@ export const api = {
             const response = await apiClient.get(`/api/v1/songs?${params}`);
             return response.data;
         },
+        getRecent: async (): Promise<{ songs: Song[]; total: number }> => {
+            const response = await apiClient.get('/api/v1/songs/recent');
+            return {
+                songs: response.data.songs || [],
+                total: response.data.total || 0
+            };
+        },
         getById: async (id: string): Promise<Song> => {
             const response = await apiClient.get(`/api/v1/songs/${id}`);
             return response.data;
         },
-        getRandom: async (): Promise<Song> => {
-            const response = await apiClient.get('/api/v1/songs/random-any');
+        getRandom: async (options: RandomOptions = {}): Promise<PaginatedResponse<Song>> => {
+            const { limit = 20, fromSongId, genre, excludeIds } = options;
+            const params = new URLSearchParams({
+                limit: limit.toString(),
+                ...(fromSongId && { fromSongId }),
+                ...(genre && { genre }),
+                ...(excludeIds && { excludeIds: excludeIds.join(',') })
+            });
+            const response = await apiClient.get(`/api/v1/songs/random?${params}`);
             return response.data;
         },
         getStreamUrl: async (trackId: string): Promise<string> => {
