@@ -50,6 +50,13 @@ android/
 .env.*
 !.env.example
 
+# Sensitive files
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+
 # TypeScript
 *.tsbuildinfo
 
